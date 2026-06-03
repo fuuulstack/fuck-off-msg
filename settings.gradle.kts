@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "NotificationSilencer"
 include(":app")
+include(":push-tester")
