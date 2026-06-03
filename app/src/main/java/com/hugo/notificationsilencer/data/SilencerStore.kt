@@ -1,6 +1,8 @@
 package com.hugo.notificationsilencer.data
 
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import com.hugo.notificationsilencer.rules.RuleResult
 import com.hugo.notificationsilencer.service.NotificationSnapshot
 import org.json.JSONArray
@@ -46,7 +48,7 @@ object SilencerStore {
         val record = NotificationRecord(
             id = System.currentTimeMillis(),
             packageName = snapshot.packageName,
-            appName = snapshot.packageName,
+            appName = context.resolveAppName(snapshot.packageName),
             title = snapshot.title.ifBlank { "(无标题)" },
             body = snapshot.searchableText.ifBlank { "(空通知)" },
             receivedAt = snapshot.postTime.toString(),
@@ -59,6 +61,18 @@ object SilencerStore {
     }
 
     private fun Context.prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+}
+
+private fun Context.resolveAppName(packageName: String): String {
+    return runCatching {
+        val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            packageManager.getApplicationInfo(packageName, PackageManager.ApplicationInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            packageManager.getApplicationInfo(packageName, 0)
+        }
+        info.loadLabel(packageManager).toString()
+    }.getOrElse { packageName }
 }
 
 private fun RuleResult.toNotificationDecision(): NotificationDecision {
