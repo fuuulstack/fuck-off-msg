@@ -1,88 +1,94 @@
-# Android Notification Silencer Design
+# 安卓通知静默拦截 App 设计规格
 
-## Goal
+## 目标
 
-Build an Android app that listens to push notifications, matches notification text against user and default keyword rules, suppresses unwanted marketing notifications where the platform allows it, and records a complete notification history for later review.
+设计并实现一款安卓 App，用于监听手机上的推送通知，通过关键词规则匹配营销类通知，并在系统能力允许的范围内对命中的通知进行拦截和静默化处理。同时，App 需要保存完整通知历史，方便用户从真实推送中提取关键词并训练自己的黑白名单规则。
 
-The first release targets normal non-root Android devices. It uses Android notification listener access to read, classify, cancel, and record notifications. Because normal apps cannot always prevent the first instant of a notification sound or vibration before the system posts it, the MVP should describe suppression as best-effort cancellation and history-based rule training. The architecture should leave room for a later Shizuku/ADB-enhanced mode.
+第一版面向普通无 root 安卓设备。它使用 Android 的 `NotificationListenerService` 获取通知、分类通知、取消命中通知并记录历史。由于普通 App 无法保证在系统播放第一瞬间铃声或震动之前完成拦截，MVP 中的“静默”应定义为尽快取消通知和持续优化规则，而不是系统级绝对拦截。架构需要为后续 Shizuku/ADB 增强模式预留空间。
 
-## Product Principles
+## 产品原则
 
-- System-level notifications are always allowed first.
-- Whitelist rules always beat blacklist and marketing rules.
-- Every blocked notification explains why it was blocked.
-- Users can train rules from real notification history with minimal typing.
-- Notification history remains useful even when no notification is blocked.
-- Default rules should start conservatively and offer a stronger optional mode.
+- 系统级通知永远优先放行。
+- 白名单永远优先于黑名单和默认营销规则。
+- 每条被拦截的通知都必须说明命中了哪个关键词。
+- 用户应能从真实通知历史中快速提取规则，尽量减少手动输入。
+- 通知历史要记录所有通知，不只记录被拦截通知。
+- 默认规则保持保守，增强规则由用户主动开启。
 
-## MVP Permission Model
+## MVP 权限模型
 
-The MVP uses:
+MVP 使用：
 
-- `NotificationListenerService` to receive notifications.
-- Notification listener permission onboarding.
-- Local storage for history and rules.
-- App metadata lookup for app names and icons.
+- `NotificationListenerService` 接收通知。
+- 通知使用权引导。
+- 本地数据库保存历史和规则。
+- 系统应用信息接口读取 App 名称和图标。
 
-The MVP does not require:
+MVP 不要求：
 
-- Root.
-- Shizuku.
-- ADB setup.
-- Cloud classification.
-- System app privileges.
+- Root。
+- Shizuku。
+- ADB 授权。
+- 云端分类。
+- 系统 App 权限。
 
-Future Shizuku-enhanced mode may add stronger notification channel or app notification policy controls, but it is outside the MVP.
+未来可以新增 Shizuku 增强模式，用于更强的通知通道或应用通知策略控制，但不属于 MVP 范围。
 
-## Rule Priority
+## 规则优先级
 
-Rules are evaluated in this fixed order:
+规则按固定顺序判断：
 
-1. System whitelist.
-2. User whitelist.
-3. User blacklist.
-4. Default conservative marketing rules.
-5. Optional enhanced marketing rules.
+1. 系统级白名单。
+2. 用户白名单。
+3. 用户黑名单。
+4. 默认保守营销规则。
+5. 可选增强营销规则。
 
-If a notification matches a higher-priority allow rule, it is allowed even if it also contains marketing keywords. This prevents false positives such as an order shipment notification that also contains a coupon phrase.
+如果一条通知命中了更高优先级的放行规则，即使它也包含营销关键词，也应该放行。这样可以避免“订单已发货，领取优惠券”这类通知因为包含“优惠券”而被误拦。
 
-## Rule Types
+## 规则类型
 
-### System Whitelist
+### 系统级白名单
 
-System-level notifications are always allowed. The system whitelist should include critical packages and categories such as:
+系统级通知永远放行。系统白名单应覆盖关键包名或关键通知类别，例如：
 
-- Android system and System UI.
-- Phone and call notifications.
-- SMS or default messaging app critical notifications.
-- Alarm and calendar reminders.
-- Payment, security, and device protection notifications when detectable.
+- Android 系统和 System UI。
+- 电话和来电通知。
+- 短信或默认消息 App 的关键通知。
+- 闹钟和日历提醒。
+- 支付、安全、设备保护相关通知。
 
-The exact package list should be editable in code for the MVP and surfaced read-only in the UI.
+MVP 中系统白名单可以先写在代码里，并在界面中以只读方式展示。
 
-### User Whitelist
+### 用户白名单
 
-Whitelist entries allow matching notifications to pass. Entries can be:
+白名单用于放行匹配通知。白名单包括：
 
-- Global keyword whitelist.
-- Per-app keyword whitelist.
-- Whole-app whitelist.
+- 全局关键词白名单。
+- 单 App 关键词白名单。
+- 整个 App 白名单。
 
-When a user adds a whitelist keyword from the smear selection screen, the app asks whether to add it globally or only for the current app.
+用户从涂抹选词页添加白名单关键词时，需要弹窗询问：
 
-### User Blacklist
+- 添加为全局白名单。
+- 仅当前 App 放行。
 
-Blacklist entries block matching notifications. Entries can be:
+### 用户黑名单
 
-- Global keyword blacklist.
-- Per-app keyword blacklist.
-- Whole-app blacklist.
+黑名单用于拦截匹配通知。黑名单包括：
 
-When a user adds a blacklist keyword from the smear selection screen, the app asks whether to add it globally or only for the current app.
+- 全局关键词黑名单。
+- 单 App 关键词黑名单。
+- 整个 App 黑名单。
 
-### Default Conservative Marketing Rules
+用户从涂抹选词页添加黑名单关键词时，也需要弹窗询问：
 
-These are enabled by default and should target clearly promotional phrases:
+- 添加为全局黑名单。
+- 仅当前 App 拦截。
+
+### 默认保守营销规则
+
+保守规则默认开启，目标是拦截明显的营销推送：
 
 - 优惠券
 - 领券
@@ -106,9 +112,9 @@ These are enabled by default and should target clearly promotional phrases:
 - 低至
 - 到手价
 
-### Enhanced Marketing Rules
+### 增强营销规则
 
-These are disabled by default. Users can enable them when they prefer stronger filtering and accept a higher false-positive risk:
+增强规则默认关闭。用户想要更强拦截时可以主动开启，但界面需要提示误杀风险更高：
 
 - 活动
 - 上新
@@ -130,223 +136,223 @@ These are disabled by default. Users can enable them when they prefer stronger f
 - 直播中
 - 任务奖励
 
-In the MVP, enhanced rules block on a single keyword match after the user enables the enhanced switch. The UI should label this as more aggressive.
+MVP 中增强规则开启后，单个关键词命中即可拦截。后续可以考虑“至少命中两个增强词才拦截”的更保守模式。
 
-## Notification Decision Flow
+## 通知判断流程
 
-For every notification:
+每收到一条通知后：
 
-1. Extract package name, app name, app icon, title, text, expanded text, post time, notification key, and group key.
-2. Normalize searchable text by combining title and body fields.
-3. Check system whitelist. If matched, record as `system_allowed`.
-4. Check user whitelist. If matched, record as `whitelist_allowed`.
-5. Check user blacklist. If matched, cancel the notification and record as `blocked`.
-6. Check conservative default rules. If matched, cancel and record as `blocked`.
-7. Check enhanced default rules only if the user enabled them. If matched, cancel and record as `blocked`.
-8. Otherwise record as `allowed`.
+1. 提取包名、App 名称、App 图标、标题、正文、展开文本、收到时间、通知 key、通知分组 key。
+2. 合并标题、正文和展开文本，得到用于匹配的完整文本。
+3. 检查系统级白名单。命中则记录为 `system_allowed`。
+4. 检查用户白名单。命中则记录为 `whitelist_allowed`。
+5. 检查用户黑名单。命中则取消通知，并记录为 `blocked`。
+6. 检查默认保守营销规则。命中则取消通知，并记录为 `blocked`。
+7. 如果用户开启增强规则，则检查增强营销规则。命中则取消通知，并记录为 `blocked`。
+8. 都没有命中时，记录为 `allowed`。
 
-Blocked records must store the matched keyword and rule source. Allowed records should also store allow reasons when applicable.
+被拦截记录必须保存命中的关键词和规则来源。被放行记录如果是系统白名单或用户白名单放行，也应保存放行原因。
 
-## History Data Model
+## 历史数据模型
 
-Each notification history record stores:
+每条通知历史记录保存：
 
-- Stable local ID.
-- Package name.
-- App display name.
-- App icon reference or cached icon.
-- Notification title.
-- Notification body.
-- Expanded text when available.
-- Received time.
-- Decision result: `allowed`, `blocked`, `system_allowed`, or `whitelist_allowed`.
-- Matched keyword, when any.
-- Matched rule type.
-- Matched rule scope: global, per-app, system, conservative, or enhanced.
-- Notification key for cancellation.
-- Group key for grouped notification handling.
-- Read state.
-- Marked state.
+- 本地稳定 ID。
+- App 包名。
+- App 显示名称。
+- App 图标引用或缓存图标。
+- 通知标题。
+- 通知正文。
+- 展开文本。
+- 收到时间。
+- 处理结果：`allowed`、`blocked`、`system_allowed`、`whitelist_allowed`。
+- 命中的关键词。
+- 命中的规则类型。
+- 命中的规则作用域：全局、单 App、系统、保守规则、增强规则。
+- 通知 key，用于取消通知。
+- 分组 key，用于处理折叠通知。
+- 已读状态。
+- 标记状态。
 
-The history table stores all notifications, not only blocked notifications.
+历史表保存所有通知，不只保存被拦截通知。
 
-## Main Navigation
+## 主导航
 
-The app uses four bottom navigation destinations:
+App 使用四个底部导航入口：
 
-- History.
-- Apps.
-- Rules.
-- Settings.
+- 历史。
+- 应用。
+- 规则。
+- 设置。
 
-## History Screen
+## 历史页
 
-History is the default home screen. It shows a flat chronological list by default.
+历史页是默认首页，默认按时间平铺展示所有通知。
 
-Each row includes:
+每条通知展示：
 
-- App icon on the left.
-- App name.
-- Notification title.
-- Body preview.
-- Time.
-- Decision badge.
-- Matched keyword badge for blocked notifications.
+- 左侧 App 图标。
+- App 名称。
+- 通知标题。
+- 正文摘要。
+- 时间。
+- 处理状态标签。
+- 被拦截时显示命中关键词标签。
 
-Example badges:
+示例标签：
 
 - `已拦截 · 命中：优惠券`
 - `已拦截 · 命中：限时秒杀`
 - `白名单放行 · 订单已发货`
 - `系统放行`
 
-Swipe actions:
+左滑操作：
 
-- `标记`: opens the smear selection screen directly.
-- `更多`: reserved in the MVP and does not expose additional actions yet.
+- `标记`：直接进入涂抹选词页。
+- `更多`：MVP 中只保留入口，不添加实际功能。
 
-## Apps Screen
+## 应用页
 
-The Apps screen groups notifications by source app.
+应用页按来源 App 聚合通知。
 
-Each app row includes:
+每个 App 条目展示：
 
-- App icon.
-- App name.
-- Total notification count.
-- Blocked notification count.
-- Recent matched keyword, when any.
-- Current allow/block state, when any.
+- App 图标。
+- App 名称。
+- 通知总数。
+- 被拦截数量。
+- 最近命中的关键词。
+- 当前白名单或黑名单状态。
 
-An app detail screen includes:
+App 详情页展示：
 
-- That app's notification history.
-- Keywords that were matched for this app.
-- Per-app whitelist rules.
-- Per-app blacklist rules.
-- Whole-app whitelist or blacklist controls.
+- 当前 App 的通知历史。
+- 当前 App 曾命中的关键词。
+- 当前 App 的单 App 白名单规则。
+- 当前 App 的单 App 黑名单规则。
+- 整个 App 加入白名单或黑名单的控制项。
 
-## Rules Screen
+## 规则页
 
-The Rules screen manages:
+规则页用于管理：
 
-- Conservative default rules.
-- Enhanced marketing rule switch.
-- Global whitelist.
-- Global blacklist.
-- Per-app rule entry points.
+- 默认保守规则。
+- 增强营销规则开关。
+- 全局白名单。
+- 全局黑名单。
+- 单 App 规则入口。
 
-Users can add and delete manual rules. Default rules can be enabled or disabled by group, but individual default keywords do not need per-keyword editing in the MVP.
+用户可以新增和删除手动规则。默认规则组可以整体启用或停用，MVP 中不需要支持逐条编辑内置默认关键词。
 
-## Settings Screen
+## 设置页
 
-Settings includes:
+设置页包含：
 
-- Notification listener permission status and setup action.
-- Explanation of best-effort suppression limits on normal Android devices.
-- History retention setting.
-- Disabled future entry for Shizuku-enhanced mode.
+- 通知使用权状态和授权入口。
+- 普通 Android 设备上“尽快取消通知”而非系统级绝对静默的说明。
+- 历史保留天数设置。
+- Shizuku 增强模式的未来入口，MVP 中禁用。
 
-Import/export rules are outside the MVP.
+规则导入导出不属于 MVP 范围。
 
-## Smear Selection Screen
+## 涂抹选词页
 
-The smear selection screen is opened from a history item by swiping left and tapping `标记`.
+涂抹选词页从历史页进入：用户左滑某条通知，点击 `标记`。
 
-Top area:
+顶部区域：
 
-- Back button.
-- Title: `涂抹选择文字`.
-- Source app icon and app name.
+- 返回按钮。
+- 标题：`涂抹选择文字`。
+- 来源 App 图标和 App 名称。
 
-Content area:
+内容区域：
 
-- Notification title and body are split into selectable cells.
-- Each Chinese character is one cell.
-- Consecutive English letters and numbers are grouped as one cell, such as `618`, `5.5`, or `VIP`.
-- Punctuation can be shown as cells but should not be required for rule creation.
-- The user can drag across cells to select text.
-- Tapping an already selected cell toggles it off.
-- Selected cells are highlighted.
-- Cells belonging to already-added words are grayed out.
+- 将通知标题和正文拆成可选文字格子。
+- 每个中文字符是一个格子。
+- 连续英文和数字合并成一个格子，例如 `618`、`5.5`、`VIP`。
+- 标点可以显示为格子，但不强制参与规则创建。
+- 用户可以拖动涂抹选择文字。
+- 点击已选中的格子可以取消选择。
+- 已选中的格子高亮显示。
+- 已经被添加为规则的文字格子置灰。
 
-Selection semantics:
+选词语义：
 
-- A continuous selected range becomes one keyword.
-- Non-continuous selected ranges become multiple keywords.
-- Example: selecting `优惠券` creates one keyword.
-- Example: selecting `优惠券` and `限时秒杀` creates two keywords.
+- 连续涂抹视为一个词。
+- 非连续涂抹视为多个词。
+- 例如选中连续的“优惠券”，生成一个关键词 `优惠券`。
+- 例如同时选中“优惠券”和“限时秒杀”两段，生成两个关键词：`优惠券`、`限时秒杀`。
 
-Bottom action area:
+底部操作区：
 
 - `添加白名单`
 - `添加黑名单`
 
-When adding to whitelist:
+添加白名单时：
 
-- Show a scope dialog with `添加为全局白名单` and `仅当前 App 放行`.
-- Add all current selected ranges according to the selected scope.
-- Gray out the cells used by the newly added words.
-- Stay on the smear selection screen for additional selection.
+- 弹出作用域选择：`添加为全局白名单`、`仅当前 App 放行`。
+- 按用户选择的作用域添加当前所有选中词段。
+- 添加完成后，将对应文字格子置灰。
+- 页面不返回，停留在涂抹选词页，方便用户继续二次涂抹。
 
-When adding to blacklist:
+添加黑名单时：
 
-- Show a scope dialog with `添加为全局黑名单` and `仅当前 App 拦截`.
-- Add all current selected ranges according to the selected scope.
-- Gray out the cells used by the newly added words.
-- Stay on the smear selection screen for additional selection.
+- 弹出作用域选择：`添加为全局黑名单`、`仅当前 App 拦截`。
+- 按用户选择的作用域添加当前所有选中词段。
+- 添加完成后，将对应文字格子置灰。
+- 页面不返回，停留在涂抹选词页，方便用户继续二次涂抹。
 
-The MVP does not support reversing a just-added rule directly from the smear screen. Users can edit or delete rules from the Rules screen.
+MVP 不在涂抹页提供刚添加规则的反向撤销。用户可以去规则页编辑或删除规则。
 
-## Error Handling
+## 异常处理
 
-- If notification listener permission is missing, show onboarding and keep history empty until permission is granted.
-- If app icon lookup fails, show a generic app icon.
-- If notification text is empty, still record package, app name, and time.
-- If cancellation fails, record the notification and mark it as `blocked_attempted` internally, but display a clear blocked status only when cancellation succeeds.
-- If a duplicate notification key arrives, update the existing record when appropriate instead of creating misleading duplicates.
+- 如果未开启通知使用权，展示授权引导；授权前历史为空。
+- 如果 App 图标读取失败，显示通用 App 图标。
+- 如果通知正文为空，仍记录包名、App 名称和时间。
+- 如果取消通知失败，内部记录为 `blocked_attempted`，但界面只有在取消成功时才显示明确的已拦截状态。
+- 如果收到重复通知 key，应更新已有记录，避免制造误导性的重复历史。
 
-## Testing Strategy
+## 测试策略
 
-Unit tests:
+单元测试：
 
-- Rule priority evaluation.
-- Whitelist over blacklist behavior.
-- System whitelist behavior.
-- Conservative and enhanced keyword matching.
-- Continuous and non-continuous smear selection grouping.
+- 规则优先级判断。
+- 白名单覆盖黑名单。
+- 系统级白名单放行。
+- 保守规则和增强规则关键词匹配。
+- 涂抹选词中连续与非连续选区的拆分。
 
-Integration tests:
+集成测试：
 
-- Notification listener event to history record.
-- Blocked notification stores matched keyword.
-- User-created whitelist rule prevents default keyword blocking.
-- Per-app rule affects only that app.
+- 通知监听事件写入历史记录。
+- 被拦截通知保存命中关键词。
+- 用户创建的白名单可以阻止默认营销词误拦。
+- 单 App 规则只影响对应 App。
 
-UI tests:
+界面测试：
 
-- History list displays app icon, badge, and matched keyword.
-- Swipe `标记` opens smear selection.
-- Smear selection creates one keyword for continuous ranges.
-- Smear selection creates multiple keywords for non-continuous ranges.
-- Add whitelist scope dialog appears.
-- Add blacklist scope dialog appears.
-- Added cells gray out and the screen does not close.
+- 历史列表展示 App 图标、状态标签和命中关键词。
+- 左滑点击 `标记` 进入涂抹选词页。
+- 连续涂抹生成一个关键词。
+- 非连续涂抹生成多个关键词。
+- 添加白名单时出现作用域弹窗。
+- 添加黑名单时出现作用域弹窗。
+- 添加规则后文字格子置灰，页面不关闭。
 
-## Out Of Scope For MVP
+## MVP 不包含
 
-- Root or system-level interception.
-- Shizuku-enhanced controls.
-- Cloud rule updates.
-- Machine learning classification.
-- Import/export of rules.
-- Regex rule editor.
-- Functional `更多` menu actions.
-- Per-keyword editing of built-in default rule groups.
+- Root 或系统级拦截。
+- Shizuku 增强控制。
+- 云端规则更新。
+- 机器学习分类。
+- 规则导入导出。
+- 正则规则编辑器。
+- `更多` 菜单的实际功能。
+- 内置默认规则的逐条编辑。
 
-## Open Implementation Notes
+## 实现建议
 
-- Kotlin is the preferred Android language.
-- Jetpack Compose is preferred for UI because the smear selection grid benefits from declarative state.
-- Room is preferred for local history and rule storage.
-- Work should begin with a minimal Android project scaffold, rule engine tests, and a fake notification source for local UI verification before wiring the real notification listener.
+- Android 语言优先使用 Kotlin。
+- UI 优先使用 Jetpack Compose，因为涂抹选词网格适合声明式状态管理。
+- 本地数据库优先使用 Room。
+- 实现应从最小 Android 工程开始，先完成规则引擎测试和假通知数据源，再接入真实通知监听服务。
