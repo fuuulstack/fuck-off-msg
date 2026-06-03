@@ -3,6 +3,7 @@ package com.hugo.notificationsilencer.service
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import com.hugo.notificationsilencer.data.SilencerStore
 import com.hugo.notificationsilencer.rules.Decision
 
 class NotificationListener : NotificationListenerService() {
@@ -11,6 +12,7 @@ class NotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val snapshot = sbn.toSnapshot()
         val result = processor.evaluate(snapshot)
+        SilencerStore.appendNotification(this, snapshot, result)
 
         if (result.decision == Decision.BLOCKED) {
             cancelNotification(snapshot.key)
