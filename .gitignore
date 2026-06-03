@@ -28,3 +28,9 @@ replay_pid*
 
 # Local implementation worktrees
 .worktrees/
+
+# Android / IDE local state
+.gradle/
+build/
+app/build/
+.idea/
