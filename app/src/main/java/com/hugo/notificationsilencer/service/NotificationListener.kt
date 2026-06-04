@@ -12,15 +12,37 @@ class NotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         super.onListenerConnected()
+        NotificationListenerHealth.markConnected()
         Log.i(TAG, "Notification listener connected")
+        activeNotifications.orEmpty().forEach { handleNotification(it, source = "active") }
+    }
+
+    override fun onListenerDisconnected() {
+        super.onListenerDisconnected()
+        NotificationListenerHealth.markDisconnected()
+        Log.i(TAG, "Notification listener disconnected")
+    }
+
+    override fun onDestroy() {
+        NotificationListenerHealth.markDisconnected()
+        super.onDestroy()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) {
+        NotificationListenerHealth.markNotificationReceived()
+        handleNotification(sbn, source = "posted")
+    }
+
+    private fun handleNotification(sbn: StatusBarNotification, source: String) {
         val snapshot = sbn.toSnapshot()
+        if (!snapshot.shouldRecord) {
+            Log.i(TAG, "Ignoring notification $source package=${snapshot.packageName} groupSummary=${snapshot.isGroupSummary}")
+            return
+        }
         val result = processor.evaluate(snapshot)
         Log.i(
             TAG,
-            "Notification posted package=${snapshot.packageName} decision=${result.decision} keyword=${result.matchedKeyword}",
+            "Notification $source package=${snapshot.packageName} decision=${result.decision} keyword=${result.matchedKeyword}",
         )
         SilencerStore.appendNotification(this, snapshot, result)
 
@@ -45,5 +67,6 @@ private fun StatusBarNotification.toSnapshot(): NotificationSnapshot {
         bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty(),
         postTime = postTime,
         groupKey = groupKey,
+        isGroupSummary = notification.flags and Notification.FLAG_GROUP_SUMMARY != 0,
     )
 }

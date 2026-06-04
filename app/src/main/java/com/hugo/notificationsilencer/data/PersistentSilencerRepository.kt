@@ -1,6 +1,9 @@
 package com.hugo.notificationsilencer.data
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.mutableStateListOf
 
 class PersistentSilencerRepository(
@@ -8,12 +11,22 @@ class PersistentSilencerRepository(
 ) : SilencerRepository {
     private val historyRecords = mutableStateListOf<NotificationRecord>()
     private val ruleItems = mutableStateListOf<RuleItem>()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (SilencerStore.isHistoryKey(key)) {
+            mainHandler.post {
+                historyRecords.clear()
+                historyRecords += SilencerStore.loadHistory(context)
+            }
+        }
+    }
 
     init {
         val storedHistory = SilencerStore.loadHistory(context)
         val storedRules = SilencerStore.loadRules(context)
-        historyRecords += storedHistory.ifEmpty { InMemorySilencerRepository.sample().history() }
-        ruleItems += storedRules.ifEmpty { InMemorySilencerRepository.sample().rules() }
+        historyRecords += storedHistory
+        ruleItems += storedRules
+        SilencerStore.registerHistoryListener(context, preferenceListener)
     }
 
     override fun history(): List<NotificationRecord> {
@@ -55,5 +68,15 @@ class PersistentSilencerRepository(
             }
         ruleItems += newRules
         SilencerStore.saveRules(context, ruleItems)
+    }
+
+    override fun deleteHistoryRecord(id: Long) {
+        historyRecords.removeAll { it.id == id }
+        SilencerStore.saveHistory(context, historyRecords)
+    }
+
+    override fun clearHistory() {
+        historyRecords.clear()
+        SilencerStore.saveHistory(context, emptyList())
     }
 }

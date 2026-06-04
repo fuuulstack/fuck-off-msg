@@ -40,7 +40,12 @@ enum class AppDestination(val route: String, val label: String, val icon: ImageV
 }
 
 @Composable
-fun AppNav(repository: SilencerRepository) {
+fun AppNav(
+    repository: SilencerRepository,
+    notificationAccessGranted: Boolean,
+    notificationListenerConnected: Boolean,
+    onOpenNotificationAccessSettings: () -> Unit,
+) {
     var destination by rememberSaveable { mutableStateOf(AppDestination.History) }
     var markingRecordId by rememberSaveable { mutableStateOf<Long?>(null) }
 
@@ -92,10 +97,18 @@ fun AppNav(repository: SilencerRepository) {
             AppDestination.History -> HistoryScreen(
                 records = repository.history(),
                 onMark = { markingRecordId = it.id },
+                onDelete = { repository.deleteHistoryRecord(it.id) },
+                onClearHistory = { repository.clearHistory() },
+                notificationAccessGranted = notificationAccessGranted,
+                notificationListenerConnected = notificationListenerConnected,
+                onOpenNotificationAccessSettings = onOpenNotificationAccessSettings,
                 modifier = Modifier.padding(innerPadding),
             )
             AppDestination.Apps -> AppsScreen(
                 summaries = repository.appSummaries(),
+                records = repository.history(),
+                onMark = { markingRecordId = it.id },
+                onDelete = { repository.deleteHistoryRecord(it.id) },
                 modifier = Modifier.padding(innerPadding),
             )
             AppDestination.Rules -> RulesScreen(
@@ -103,6 +116,9 @@ fun AppNav(repository: SilencerRepository) {
                 modifier = Modifier.padding(innerPadding),
             )
             AppDestination.Settings -> SettingsScreen(
+                notificationAccessGranted = notificationAccessGranted,
+                notificationListenerConnected = notificationListenerConnected,
+                onOpenNotificationAccessSettings = onOpenNotificationAccessSettings,
                 modifier = Modifier.padding(innerPadding),
             )
         }

@@ -14,6 +14,7 @@ enum class RuleScope {
 
 data class NotificationRecord(
     val id: Long,
+    val notificationKey: String? = null,
     val packageName: String,
     val appName: String,
     val title: String,
@@ -43,4 +44,6 @@ interface SilencerRepository {
     fun appSummaries(): List<AppSummary>
     fun rules(): List<RuleItem>
     fun addKeywords(keywords: List<String>, allow: Boolean, scope: RuleScope)
+    fun deleteHistoryRecord(id: Long)
+    fun clearHistory()
 }

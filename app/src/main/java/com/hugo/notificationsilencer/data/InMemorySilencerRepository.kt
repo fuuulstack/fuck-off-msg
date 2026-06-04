@@ -39,12 +39,21 @@ class InMemorySilencerRepository private constructor(
         }
     }
 
+    override fun deleteHistoryRecord(id: Long) {
+        historyRecords.removeAll { it.id == id }
+    }
+
+    override fun clearHistory() {
+        historyRecords.clear()
+    }
+
     companion object {
         fun sample(): InMemorySilencerRepository {
             return InMemorySilencerRepository(
                 historyRecords = mutableListOf(
                     NotificationRecord(
                         id = 1,
+                        notificationKey = "sample-shopping",
                         packageName = "com.shop.demo",
                         appName = "购物示例",
                         title = "限时秒杀",
@@ -55,6 +64,7 @@ class InMemorySilencerRepository private constructor(
                     ),
                     NotificationRecord(
                         id = 2,
+                        notificationKey = "sample-delivery",
                         packageName = "com.delivery.demo",
                         appName = "物流示例",
                         title = "订单已发货",
@@ -65,6 +75,7 @@ class InMemorySilencerRepository private constructor(
                     ),
                     NotificationRecord(
                         id = 3,
+                        notificationKey = "sample-system",
                         packageName = "android",
                         appName = "Android 系统",
                         title = "系统更新",

@@ -17,4 +17,11 @@ class MainActivity : ComponentActivity() {
             SilencerApp()
         }
     }
+
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations && !AppTaskVisibility.consumeSkipNextTaskRemoval()) {
+            finishAndRemoveTask()
+        }
+    }
 }

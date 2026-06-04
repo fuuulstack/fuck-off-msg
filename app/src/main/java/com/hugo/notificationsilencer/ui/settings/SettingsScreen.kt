@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -21,6 +23,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hugo.notificationsilencer.theme.MistBlue
+import com.hugo.notificationsilencer.theme.MistRed
 import com.hugo.notificationsilencer.theme.PrimaryText
 import com.hugo.notificationsilencer.theme.SecondaryText
 import com.hugo.notificationsilencer.ui.components.GlassBackground
@@ -28,7 +31,12 @@ import com.hugo.notificationsilencer.ui.components.GlassCard
 import com.hugo.notificationsilencer.ui.components.PageHeader
 
 @Composable
-fun SettingsScreen(modifier: Modifier = Modifier) {
+fun SettingsScreen(
+    notificationAccessGranted: Boolean,
+    notificationListenerConnected: Boolean,
+    onOpenNotificationAccessSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     GlassBackground(modifier = modifier) {
         Column(
             modifier = Modifier
@@ -42,9 +50,26 @@ fun SettingsScreen(modifier: Modifier = Modifier) {
                 icon = Icons.Filled.Settings,
             )
             SettingsRow(
-                icon = Icons.Filled.NotificationsActive,
+                icon = if (notificationAccessGranted && notificationListenerConnected) {
+                    Icons.Filled.NotificationsActive
+                } else {
+                    Icons.Filled.NotificationsOff
+                },
                 title = "通知监听权限",
-                body = "需要在系统设置中允许本 App 读取通知，拦截和历史记录才会生效。",
+                body = when {
+                    !notificationAccessGranted ->
+                        "未开启。需要在系统设置中允许本 App 读取通知，拦截和历史记录才会生效。"
+                    !notificationListenerConnected ->
+                        "授权已开启，但监听服务未连接。请进入系统通知使用权页面，将本 App 关开一次。"
+                    else ->
+                        "已开启且监听服务已连接。系统会把新通知发送给本 App，用于拦截和写入历史。"
+                },
+                iconTint = if (notificationAccessGranted && notificationListenerConnected) MistBlue else MistRed,
+                action = {
+                    Button(onClick = onOpenNotificationAccessSettings) {
+                        Text(if (notificationAccessGranted) "重新授权" else "去授权")
+                    }
+                },
             )
             SettingsRow(
                 icon = Icons.Filled.Info,
@@ -65,6 +90,8 @@ private fun SettingsRow(
     icon: ImageVector,
     title: String,
     body: String,
+    iconTint: androidx.compose.ui.graphics.Color = MistBlue,
+    action: (@Composable () -> Unit)? = null,
 ) {
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -75,9 +102,12 @@ private fun SettingsRow(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = MistBlue,
+                tint = iconTint,
             )
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleMedium,
@@ -90,6 +120,7 @@ private fun SettingsRow(
                     color = SecondaryText,
                 )
             }
+            action?.invoke()
         }
     }
 }

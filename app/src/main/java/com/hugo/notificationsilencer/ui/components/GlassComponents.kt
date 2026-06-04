@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -165,13 +166,7 @@ fun AppAvatar(
     val icon = remember(packageName) {
         packageName?.let {
             runCatching {
-                val info = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    context.packageManager.getApplicationInfo(it, PackageManager.ApplicationInfoFlags.of(0))
-                } else {
-                    @Suppress("DEPRECATION")
-                    context.packageManager.getApplicationInfo(it, 0)
-                }
-                info.loadIcon(context.packageManager)
+                context.packageManager.getApplicationIcon(it)
             }.getOrNull()
         }
     }
@@ -188,8 +183,9 @@ fun AppAvatar(
                 bitmap = icon.asAvatarBitmap(),
                 contentDescription = appName,
                 modifier = Modifier
-                    .size(30.dp)
-                    .clip(CircleShape),
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(9.dp)),
+                contentScale = ContentScale.Fit,
             )
         } else {
             Text(

@@ -1,30 +1,53 @@
 package com.hugo.notificationsilencer.ui.apps
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hugo.notificationsilencer.data.AppSummary
+import com.hugo.notificationsilencer.data.NotificationRecord
 import com.hugo.notificationsilencer.theme.MistBlue
 import com.hugo.notificationsilencer.theme.MistBlueContainer
 import com.hugo.notificationsilencer.theme.MistRed
@@ -36,46 +59,148 @@ import com.hugo.notificationsilencer.ui.components.GlassBackground
 import com.hugo.notificationsilencer.ui.components.GlassCard
 import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatusPill
+import com.hugo.notificationsilencer.ui.history.SwipeRevealHistoryCard
+import kotlinx.coroutines.launch
 
 @Composable
-fun AppsScreen(summaries: List<AppSummary>, modifier: Modifier = Modifier) {
+fun AppsScreen(
+    summaries: List<AppSummary>,
+    records: List<NotificationRecord>,
+    onMark: (NotificationRecord) -> Unit,
+    onDelete: (NotificationRecord) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var selectedPackage by remember { mutableStateOf<String?>(null) }
+    val selectedSummary = summaries.firstOrNull { it.packageName == selectedPackage }
+
+    if (selectedPackage != null) {
+        BackHandler {
+            selectedPackage = null
+        }
+        AppNotificationsScreen(
+            summary = selectedSummary,
+            packageName = selectedPackage.orEmpty(),
+            records = records.filter { it.packageName == selectedPackage },
+            onMark = onMark,
+            onDelete = onDelete,
+            onBack = { selectedPackage = null },
+            modifier = modifier,
+        )
+        return
+    }
+
+    AppsListScreen(
+        summaries = summaries,
+        onOpenApp = { selectedPackage = it.packageName },
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun AppsListScreen(
+    summaries: List<AppSummary>,
+    onOpenApp: (AppSummary) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var query by remember { mutableStateOf("") }
+    val filteredSummaries = remember(summaries, query) {
+        summaries.filter { it.matchesQuery(query) }
+    }
+    val groupedSummaries = remember(filteredSummaries) {
+        filteredSummaries.groupBy { it.indexLetter() }
+            .toSortedMap(compareBy { if (it == "#") "ZZZ" else it })
+    }
+    val listState = rememberLazyListState()
+    val indexPositions = remember(groupedSummaries) {
+        val positions = mutableMapOf<String, Int>()
+        var index = 2
+        groupedSummaries.forEach { (letter, apps) ->
+            positions[letter] = index
+            index += 1 + apps.size
+        }
+        positions
+    }
+
     GlassBackground(modifier = modifier) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                PageHeader(
-                    title = "应用",
-                    subtitle = "按 App 汇总通知和拦截情况",
-                    icon = Icons.Filled.Apps,
-                )
-            }
-            if (summaries.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 item {
-                    GlassCard(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = "暂无应用通知记录",
-                            modifier = Modifier.padding(20.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = SecondaryText,
-                        )
+                    PageHeader(
+                        title = "应用",
+                        subtitle = "按 App 汇总通知和拦截情况",
+                        icon = Icons.Filled.Apps,
+                    )
+                }
+                item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        singleLine = true,
+                        shape = RoundedCornerShape(16.dp),
+                        leadingIcon = {
+                            Icon(imageVector = Icons.Filled.Search, contentDescription = null)
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color.White,
+                            focusedBorderColor = Color.Transparent,
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedLeadingIconColor = SecondaryText,
+                            unfocusedLeadingIconColor = SecondaryText,
+                        ),
+                    )
+                }
+                if (filteredSummaries.isEmpty()) {
+                    item { EmptyAppsCard(query = query) }
+                } else {
+                    groupedSummaries.forEach { (letter, apps) ->
+                        item(key = "header-$letter") {
+                            Text(
+                                text = letter,
+                                modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = SecondaryText,
+                            )
+                        }
+                        items(apps, key = { it.packageName }) { summary ->
+                            AppSummaryCard(
+                                summary = summary,
+                                onClick = { onOpenApp(summary) },
+                            )
+                        }
                     }
                 }
-            } else {
-                items(summaries, key = { it.packageName }) { summary ->
-                    AppSummaryCard(summary = summary)
-                }
+            }
+
+            if (groupedSummaries.size > 1) {
+                AlphabetIndex(
+                    letters = groupedSummaries.keys.toList(),
+                    listState = listState,
+                    indexPositions = indexPositions,
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun AppSummaryCard(summary: AppSummary) {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
+private fun AppSummaryCard(summary: AppSummary, onClick: () -> Unit) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
         Row(
             modifier = Modifier.padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -125,4 +250,136 @@ private fun AppSummaryCard(summary: AppSummary) {
             )
         }
     }
+}
+
+@Composable
+private fun AlphabetIndex(
+    letters: List<String>,
+    listState: LazyListState,
+    indexPositions: Map<String, Int>,
+    modifier: Modifier = Modifier,
+) {
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = modifier
+            .padding(end = 4.dp)
+            .width(24.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(Color.White.copy(alpha = 0.78f))
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        letters.forEach { letter ->
+            Text(
+                text = letter,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(999.dp))
+                    .clickable {
+                        indexPositions[letter]?.let { index ->
+                            scope.launch { listState.animateScrollToItem(index) }
+                        }
+                    }
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = SecondaryText,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyAppsCard(query: String) {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = if (query.isBlank()) "暂无应用通知记录" else "没有匹配的应用",
+            modifier = Modifier.padding(20.dp),
+            style = MaterialTheme.typography.bodyMedium,
+            color = SecondaryText,
+        )
+    }
+}
+
+@Composable
+private fun AppNotificationsScreen(
+    summary: AppSummary?,
+    packageName: String,
+    records: List<NotificationRecord>,
+    onMark: (NotificationRecord) -> Unit,
+    onDelete: (NotificationRecord) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val appName = summary?.appName ?: records.firstOrNull()?.appName ?: packageName
+
+    GlassBackground(modifier = modifier) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            item {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.White.copy(alpha = 0.92f))
+                            .size(48.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "返回应用列表",
+                            tint = SecondaryText,
+                        )
+                    }
+                    PageHeader(
+                        title = appName,
+                        subtitle = "该 App 的推送列表",
+                        icon = Icons.Filled.Notifications,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            if (records.isEmpty()) {
+                item {
+                    GlassCard(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "这个应用暂无推送记录",
+                            modifier = Modifier.padding(20.dp),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SecondaryText,
+                        )
+                    }
+                }
+            } else {
+                items(records, key = { it.id }) { record ->
+                    SwipeRevealHistoryCard(
+                        record = record,
+                        onMark = { onMark(record) },
+                        onDelete = { onDelete(record) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun AppSummary.matchesQuery(query: String): Boolean {
+    val normalized = query.trim()
+    if (normalized.isEmpty()) return true
+    return listOf(appName, packageName, recentKeyword.orEmpty())
+        .any { it.contains(normalized, ignoreCase = true) }
+}
+
+private fun AppSummary.indexLetter(): String {
+    val appInitial = appName.firstOrNull()?.uppercaseChar()?.takeIf { it in 'A'..'Z' }
+    val packageInitial = packageName.substringAfterLast('.').firstOrNull()?.uppercaseChar()?.takeIf { it in 'A'..'Z' }
+    return (appInitial ?: packageInitial)?.toString() ?: "#"
 }

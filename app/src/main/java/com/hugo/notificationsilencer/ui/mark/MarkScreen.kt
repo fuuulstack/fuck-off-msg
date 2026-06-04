@@ -1,8 +1,10 @@
 package com.hugo.notificationsilencer.ui.mark
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
@@ -10,21 +12,25 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -32,6 +38,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hugo.notificationsilencer.data.NotificationRecord
@@ -50,6 +62,7 @@ import com.hugo.notificationsilencer.ui.components.GlassActionRow
 import com.hugo.notificationsilencer.ui.components.GlassBackground
 import com.hugo.notificationsilencer.ui.components.GlassCard
 import com.hugo.notificationsilencer.ui.components.IconLabelButton
+import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatusPill
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
@@ -60,10 +73,13 @@ fun MarkScreen(
     onAddWhitelist: (List<String>, RuleScope) -> Unit,
     onAddBlacklist: (List<String>, RuleScope) -> Unit,
 ) {
+    BackHandler(onBack = onBack)
+
     val cells = remember(record.id) { TextCell.tokenize("${record.title}${record.body}") }
     var selected by remember { mutableStateOf(setOf<Int>()) }
     var added by remember { mutableStateOf(setOf<Int>()) }
     var pendingAllow by remember { mutableStateOf<Boolean?>(null) }
+    val cellBounds = remember(record.id) { mutableStateMapOf<Int, Rect>() }
 
     fun selectedKeywords(): List<String> {
         return SmearSelection.groupSelectedKeywords(cells, selected)
@@ -115,33 +131,32 @@ fun MarkScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconLabelButton(
-                    text = "返回",
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
+                IconButton(
                     onClick = onBack,
-                    containerColor = Color.White.copy(alpha = 0.92f),
-                    contentColor = PrimaryText,
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = "涂抹选词",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PrimaryText,
-                    )
-                    Text(
-                        text = "连续选择视为一个词，非连续选择视为多个词",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SecondaryText,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.92f))
+                        .size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "返回历史列表",
+                        tint = SecondaryText,
                     )
                 }
+                PageHeader(
+                    title = "涂抹选词",
+                    subtitle = "连续选择视为一个词，非连续选择视为多个词",
+                    icon = Icons.Filled.Edit,
+                    modifier = Modifier.weight(1f),
+                )
             }
 
             SourceNotificationCard(record = record)
@@ -149,7 +164,49 @@ fun MarkScreen(
             FlowRow(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .pointerInput(cells, added) {
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val touched = mutableSetOf<Int>()
+                            val selectedBeforeGesture = selected
+                            var moved = false
+
+                            fun cellAt(position: Offset): Int? {
+                                return cellBounds.entries.firstOrNull { (_, bounds) ->
+                                    bounds.contains(position)
+                                }?.key
+                            }
+
+                            fun smearAt(position: Offset) {
+                                val index = cellAt(position) ?: return
+                                if (added.contains(index) || touched.contains(index)) return
+                                touched += index
+                                selected = if (selectedBeforeGesture.contains(index)) {
+                                    selected - index
+                                } else {
+                                    selected + index
+                                }
+                            }
+
+                            smearAt(down.position)
+
+                            do {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                val delta = change.positionChange()
+                                if (delta.x != 0f || delta.y != 0f) {
+                                    moved = true
+                                    smearAt(change.position)
+                                    change.consume()
+                                }
+                            } while (event.changes.any { !it.changedToUpIgnoreConsumed() })
+
+                            if (!moved && touched.size == 1) {
+                                // The down event already applied the same toggle as a tap.
+                            }
+                        }
+                    },
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -168,8 +225,15 @@ fun MarkScreen(
                                 },
                             )
                             .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
-                            .clickable(enabled = !addedNow) {
-                                selected = if (selectedNow) selected - cell.index else selected + cell.index
+                            .onGloballyPositioned { coordinates ->
+                                val parent = coordinates.parentLayoutCoordinates ?: return@onGloballyPositioned
+                                val topLeft = parent.localPositionOf(coordinates, Offset.Zero)
+                                cellBounds[cell.index] = Rect(
+                                    left = topLeft.x,
+                                    top = topLeft.y,
+                                    right = topLeft.x + coordinates.size.width,
+                                    bottom = topLeft.y + coordinates.size.height,
+                                )
                             }
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         style = MaterialTheme.typography.titleMedium,
@@ -197,6 +261,21 @@ fun MarkScreen(
                     containerColor = MistRedContainer,
                     contentColor = MistRed,
                 )
+                IconButton(
+                    onClick = { selected = emptySet() },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.92f))
+                        .border(1.dp, GlassBorder, RoundedCornerShape(14.dp))
+                        .size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.CleaningServices,
+                        contentDescription = "清除勾选",
+                        tint = if (selected.isNotEmpty()) SecondaryText else MutedText,
+                    )
+                }
             }
         }
     }

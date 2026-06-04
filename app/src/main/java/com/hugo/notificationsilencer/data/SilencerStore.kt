@@ -1,12 +1,15 @@
 package com.hugo.notificationsilencer.data
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import com.hugo.notificationsilencer.rules.RuleResult
 import com.hugo.notificationsilencer.service.NotificationSnapshot
 import org.json.JSONArray
 import org.json.JSONObject
+
+private const val HISTORY_RETENTION_DAYS = 7L
 
 object SilencerStore {
     private const val PREFS = "notification_silencer_store"
@@ -15,9 +18,14 @@ object SilencerStore {
 
     fun loadHistory(context: Context): List<NotificationRecord> {
         val array = JSONArray(context.prefs().getString(KEY_HISTORY, "[]"))
-        return (0 until array.length()).map { index ->
+        val records = (0 until array.length()).map { index ->
             array.getJSONObject(index).toNotificationRecord()
+        }.filter { it.hasDisplayableContent() && !it.isExpired() }
+
+        if (records.size != array.length()) {
+            saveHistory(context, records)
         }
+        return records
     }
 
     fun loadRules(context: Context): List<RuleItem> {
@@ -39,6 +47,17 @@ object SilencerStore {
         context.prefs().edit().putString(KEY_RULES, array.toString()).apply()
     }
 
+    fun registerHistoryListener(
+        context: Context,
+        listener: SharedPreferences.OnSharedPreferenceChangeListener,
+    ) {
+        context.prefs().registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun isHistoryKey(key: String?): Boolean {
+        return key == KEY_HISTORY
+    }
+
     fun appendNotification(
         context: Context,
         snapshot: NotificationSnapshot,
@@ -47,6 +66,7 @@ object SilencerStore {
         val records = loadHistory(context).toMutableList()
         val record = NotificationRecord(
             id = System.currentTimeMillis(),
+            notificationKey = snapshot.key,
             packageName = snapshot.packageName,
             appName = context.resolveAppName(snapshot.packageName),
             title = snapshot.title.ifBlank { "(无标题)" },
@@ -55,9 +75,9 @@ object SilencerStore {
             decision = result.toNotificationDecision(),
             matchedKeyword = result.matchedKeyword,
         )
-        records.removeAll { it.id == record.id }
+        records.removeAll { it.notificationKey == record.notificationKey || it.id == record.id }
         records += record
-        saveHistory(context, records.takeLast(500))
+        saveHistory(context, records.filter { !it.isExpired() }.takeLast(500))
     }
 
     private fun Context.prefs() = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -87,6 +107,7 @@ private fun RuleResult.toNotificationDecision(): NotificationDecision {
 private fun NotificationRecord.toJson(): JSONObject {
     return JSONObject()
         .put("id", id)
+        .put("notificationKey", notificationKey)
         .put("packageName", packageName)
         .put("appName", appName)
         .put("title", title)
@@ -99,6 +120,7 @@ private fun NotificationRecord.toJson(): JSONObject {
 private fun JSONObject.toNotificationRecord(): NotificationRecord {
     return NotificationRecord(
         id = getLong("id"),
+        notificationKey = optString("notificationKey").takeIf { it.isNotBlank() && it != "null" },
         packageName = getString("packageName"),
         appName = getString("appName"),
         title = getString("title"),
@@ -107,6 +129,25 @@ private fun JSONObject.toNotificationRecord(): NotificationRecord {
         decision = NotificationDecision.valueOf(getString("decision")),
         matchedKeyword = optString("matchedKeyword").takeIf { it.isNotBlank() && it != "null" },
     )
+}
+
+private fun NotificationRecord.hasDisplayableContent(): Boolean {
+    return !packageName.isSystemPackage() && (title != "(无标题)" || body != "(空通知)")
+}
+
+private fun NotificationRecord.isExpired(): Boolean {
+    val receivedAtMillis = receivedAt.toLongOrNull() ?: id
+    val cutoff = System.currentTimeMillis() - HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000
+    return receivedAtMillis < cutoff
+}
+
+private fun String.isSystemPackage(): Boolean {
+    return this == "android" ||
+        startsWith("com.android.") ||
+        startsWith("com.google.android.") ||
+        startsWith("com.coloros.") ||
+        startsWith("com.oplus.") ||
+        startsWith("com.heytap.")
 }
 
 private fun RuleItem.toJson(): JSONObject {

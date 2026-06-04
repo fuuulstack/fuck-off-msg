@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.hugo.notificationsilencer"
     compileSdk = 36
-    compileSdkExtension = 20
+    compileSdkMinor = 1
 
     defaultConfig {
         applicationId = "com.hugo.notificationsilencer"
