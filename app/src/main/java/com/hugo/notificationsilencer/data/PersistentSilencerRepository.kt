@@ -4,13 +4,17 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 class PersistentSilencerRepository(
     private val context: Context,
 ) : SilencerRepository {
     private val historyRecords = mutableStateListOf<NotificationRecord>()
     private val ruleItems = mutableStateListOf<RuleItem>()
+    private var settings by mutableStateOf(SilencerSettings())
     private val mainHandler = Handler(Looper.getMainLooper())
     private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (SilencerStore.isHistoryKey(key)) {
@@ -24,6 +28,7 @@ class PersistentSilencerRepository(
     init {
         val storedHistory = SilencerStore.loadHistory(context)
         val storedRules = SilencerStore.loadRules(context)
+        settings = SilencerStore.loadSettings(context)
         historyRecords += storedHistory
         ruleItems += storedRules
         SilencerStore.registerHistoryListener(context, preferenceListener)
@@ -52,8 +57,25 @@ class PersistentSilencerRepository(
         return ruleItems.toList()
     }
 
-    override fun addKeywords(keywords: List<String>, allow: Boolean, scope: RuleScope) {
+    override fun settings(): SilencerSettings {
+        return settings
+    }
+
+    override fun setEnhancedMarketingRulesEnabled(enabled: Boolean) {
+        settings = settings.copy(enhancedMarketingRulesEnabled = enabled)
+        SilencerStore.saveSettings(context, settings)
+    }
+
+    override fun addKeywords(
+        keywords: List<String>,
+        allow: Boolean,
+        scope: RuleScope,
+        packageName: String?,
+        appName: String?,
+    ) {
         val nextId = (ruleItems.maxOfOrNull { it.id } ?: 0L) + 1L
+        val scopedPackageName = packageName.takeIf { scope == RuleScope.CurrentApp }
+        val scopedAppName = appName.takeIf { scope == RuleScope.CurrentApp }
         val newRules = keywords
             .map { it.trim() }
             .filter { it.isNotEmpty() }
@@ -64,9 +86,17 @@ class PersistentSilencerRepository(
                     keyword = keyword,
                     allow = allow,
                     scope = scope,
+                    packageName = scopedPackageName,
+                    appName = scopedAppName,
                 )
             }
         ruleItems += newRules
+        SilencerStore.saveRules(context, ruleItems)
+    }
+
+    override fun deleteRules(ids: Set<Long>) {
+        if (ids.isEmpty()) return
+        ruleItems.removeAll { ids.contains(it.id) }
         SilencerStore.saveRules(context, ruleItems)
     }
 

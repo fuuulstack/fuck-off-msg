@@ -6,8 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 val AppBackground = Color(0xFFF6F7F8)
-val GlassWhite = Color(0xEFFFFFFF)
-val GlassBorder = Color(0xCCFFFFFF)
+val GlassWhite = Color(0xFFFFFFFF)
 val PrimaryText = Color(0xFF1F2933)
 val SecondaryText = Color(0xFF69727D)
 val MutedText = Color(0xFF9AA3AD)

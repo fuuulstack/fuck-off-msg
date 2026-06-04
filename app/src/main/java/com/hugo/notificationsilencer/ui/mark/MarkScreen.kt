@@ -1,24 +1,29 @@
 package com.hugo.notificationsilencer.ui.mark
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CleaningServices
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
@@ -37,9 +42,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,7 +56,6 @@ import androidx.compose.ui.unit.dp
 import com.hugo.notificationsilencer.data.NotificationRecord
 import com.hugo.notificationsilencer.data.RuleScope
 import com.hugo.notificationsilencer.theme.AddedToken
-import com.hugo.notificationsilencer.theme.GlassBorder
 import com.hugo.notificationsilencer.theme.MistGreen
 import com.hugo.notificationsilencer.theme.MistGreenContainer
 import com.hugo.notificationsilencer.theme.MistRed
@@ -64,6 +70,8 @@ import com.hugo.notificationsilencer.ui.components.GlassCard
 import com.hugo.notificationsilencer.ui.components.IconLabelButton
 import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatusPill
+import com.hugo.notificationsilencer.ui.gestures.DragIntent
+import com.hugo.notificationsilencer.ui.gestures.dragIntent
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -80,6 +88,7 @@ fun MarkScreen(
     var added by remember { mutableStateOf(setOf<Int>()) }
     var pendingAllow by remember { mutableStateOf<Boolean?>(null) }
     val cellBounds = remember(record.id) { mutableStateMapOf<Int, Rect>() }
+    val tokenScrollState = rememberScrollState()
 
     fun selectedKeywords(): List<String> {
         return SmearSelection.groupSelectedKeywords(cells, selected)
@@ -161,85 +170,108 @@ fun MarkScreen(
 
             SourceNotificationCard(record = record)
 
-            FlowRow(
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .pointerInput(cells, added) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            val touched = mutableSetOf<Int>()
-                            val selectedBeforeGesture = selected
-                            var moved = false
-
-                            fun cellAt(position: Offset): Int? {
-                                return cellBounds.entries.firstOrNull { (_, bounds) ->
-                                    bounds.contains(position)
-                                }?.key
-                            }
-
-                            fun smearAt(position: Offset) {
-                                val index = cellAt(position) ?: return
-                                if (added.contains(index) || touched.contains(index)) return
-                                touched += index
-                                selected = if (selectedBeforeGesture.contains(index)) {
-                                    selected - index
-                                } else {
-                                    selected + index
-                                }
-                            }
-
-                            smearAt(down.position)
-
-                            do {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull() ?: break
-                                val delta = change.positionChange()
-                                if (delta.x != 0f || delta.y != 0f) {
-                                    moved = true
-                                    smearAt(change.position)
-                                    change.consume()
-                                }
-                            } while (event.changes.any { !it.changedToUpIgnoreConsumed() })
-
-                            if (!moved && touched.size == 1) {
-                                // The down event already applied the same toggle as a tap.
-                            }
-                        }
-                    },
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                    .fillMaxWidth(),
             ) {
-                cells.forEach { cell ->
-                    val selectedNow = selected.contains(cell.index)
-                    val addedNow = added.contains(cell.index)
-                    Text(
-                        text = cell.text,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(
-                                when {
-                                    addedNow -> AddedToken
-                                    selectedNow -> SelectedToken
-                                    else -> Color.White.copy(alpha = 0.82f)
-                                },
-                            )
-                            .border(1.dp, GlassBorder, RoundedCornerShape(12.dp))
-                            .onGloballyPositioned { coordinates ->
-                                val parent = coordinates.parentLayoutCoordinates ?: return@onGloballyPositioned
-                                val topLeft = parent.localPositionOf(coordinates, Offset.Zero)
-                                cellBounds[cell.index] = Rect(
-                                    left = topLeft.x,
-                                    top = topLeft.y,
-                                    right = topLeft.x + coordinates.size.width,
-                                    bottom = topLeft.y + coordinates.size.height,
-                                )
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(tokenScrollState)
+                        .padding(end = 12.dp)
+                        .pointerInput(cells, added) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val touched = mutableSetOf<Int>()
+                                val selectedBeforeGesture = selected
+                                var moved = false
+                                var totalX = 0f
+                                var totalY = 0f
+                                var intent = DragIntent.Undecided
+
+                                fun cellAt(position: Offset): Int? {
+                                    return cellBounds.entries.firstOrNull { (_, bounds) ->
+                                        bounds.contains(position)
+                                    }?.key
+                                }
+
+                                fun smearAt(position: Offset) {
+                                    val index = cellAt(position) ?: return
+                                    if (added.contains(index) || touched.contains(index)) return
+                                    touched += index
+                                    selected = if (selectedBeforeGesture.contains(index)) {
+                                        selected - index
+                                    } else {
+                                        selected + index
+                                    }
+                                }
+
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull() ?: break
+                                    val delta = change.positionChange()
+                                    totalX += delta.x
+                                    totalY += delta.y
+                                    if (intent == DragIntent.Undecided) {
+                                        intent = dragIntent(totalX, totalY, viewConfiguration.touchSlop)
+                                    }
+                                    if (intent == DragIntent.HorizontalAction) {
+                                        if (!moved) smearAt(down.position)
+                                        if (delta.x != 0f || delta.y != 0f) {
+                                            moved = true
+                                        }
+                                        smearAt(change.position)
+                                        change.consume()
+                                    }
+                                } while (event.changes.any { !it.changedToUpIgnoreConsumed() })
+
+                                if (intent == DragIntent.Undecided) {
+                                    smearAt(down.position)
+                                }
                             }
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (addedNow) MutedText else PrimaryText,
-                    )
+                        },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    cells.forEach { cell ->
+                        val selectedNow = selected.contains(cell.index)
+                        val addedNow = added.contains(cell.index)
+                        Text(
+                            text = cell.text,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    when {
+                                        addedNow -> AddedToken
+                                        selectedNow -> SelectedToken
+                                        else -> Color.White.copy(alpha = 0.82f)
+                                    },
+                                )
+                                .onGloballyPositioned { coordinates ->
+                                    val parent = coordinates.parentLayoutCoordinates ?: return@onGloballyPositioned
+                                    val topLeft = parent.localPositionOf(coordinates, Offset.Zero)
+                                    cellBounds[cell.index] = Rect(
+                                        left = topLeft.x,
+                                        top = topLeft.y,
+                                        right = topLeft.x + coordinates.size.width,
+                                        bottom = topLeft.y + coordinates.size.height,
+                                    )
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (addedNow) MutedText else PrimaryText,
+                        )
+                    }
                 }
+                TokenScrollIndicator(
+                    maxScroll = tokenScrollState.maxValue,
+                    scrollValue = tokenScrollState.value,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(4.dp),
+                )
             }
 
             GlassActionRow(modifier = Modifier.fillMaxWidth()) {
@@ -267,17 +299,48 @@ fun MarkScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
                         .background(Color.White.copy(alpha = 0.92f))
-                        .border(1.dp, GlassBorder, RoundedCornerShape(14.dp))
                         .size(48.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.CleaningServices,
+                        imageVector = Icons.Filled.Delete,
                         contentDescription = "清除勾选",
-                        tint = if (selected.isNotEmpty()) SecondaryText else MutedText,
+                        tint = if (selected.isNotEmpty()) MistRed else MutedText,
                     )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun TokenScrollIndicator(
+    maxScroll: Int,
+    scrollValue: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (maxScroll <= 0) return
+
+    Canvas(modifier = modifier) {
+        val trackWidth = size.width
+        val trackHeight = size.height
+        if (trackHeight <= 0f) return@Canvas
+
+        val contentHeight = trackHeight + maxScroll
+        val thumbHeight = (trackHeight * trackHeight / contentHeight).coerceAtLeast(24.dp.toPx())
+        val thumbTop = (scrollValue / maxScroll.toFloat()) * (trackHeight - thumbHeight)
+        val radius = CornerRadius(trackWidth / 2f, trackWidth / 2f)
+
+        drawRoundRect(
+            color = SecondaryText.copy(alpha = 0.18f),
+            size = Size(trackWidth, trackHeight),
+            cornerRadius = radius,
+        )
+        drawRoundRect(
+            color = SecondaryText.copy(alpha = 0.58f),
+            topLeft = Offset(0f, thumbTop),
+            size = Size(trackWidth, thumbHeight),
+            cornerRadius = radius,
+        )
     }
 }
 

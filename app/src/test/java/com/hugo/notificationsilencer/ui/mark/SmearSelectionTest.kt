@@ -1,5 +1,7 @@
 package com.hugo.notificationsilencer.ui.mark
 
+import com.hugo.notificationsilencer.ui.gestures.DragIntent
+import com.hugo.notificationsilencer.ui.gestures.dragIntent
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -36,5 +38,20 @@ class SmearSelectionTest {
             listOf("618VIP", "专", "享"),
             cells.map { it.text },
         )
+    }
+
+    @Test
+    fun dragIntentKeepsVerticalMovementAvailableForScrolling() {
+        assertEquals(DragIntent.VerticalScroll, dragIntent(totalX = 2f, totalY = 24f, touchSlop = 8f))
+    }
+
+    @Test
+    fun dragIntentTreatsHorizontalMovementAsSelection() {
+        assertEquals(DragIntent.HorizontalAction, dragIntent(totalX = 24f, totalY = 2f, touchSlop = 8f))
+    }
+
+    @Test
+    fun dragIntentWaitsUntilMovementPassesTouchSlop() {
+        assertEquals(DragIntent.Undecided, dragIntent(totalX = 2f, totalY = 3f, touchSlop = 8f))
     }
 }

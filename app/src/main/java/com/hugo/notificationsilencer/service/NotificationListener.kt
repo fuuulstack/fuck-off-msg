@@ -8,8 +8,6 @@ import com.hugo.notificationsilencer.data.SilencerStore
 import com.hugo.notificationsilencer.rules.Decision
 
 class NotificationListener : NotificationListenerService() {
-    private val processor = NotificationProcessor()
-
     override fun onListenerConnected() {
         super.onListenerConnected()
         NotificationListenerHealth.markConnected()
@@ -39,6 +37,11 @@ class NotificationListener : NotificationListenerService() {
             Log.i(TAG, "Ignoring notification $source package=${snapshot.packageName} groupSummary=${snapshot.isGroupSummary}")
             return
         }
+        val settings = SilencerStore.loadSettings(this)
+        val processor = NotificationProcessor(
+            enhancedEnabled = settings.enhancedMarketingRulesEnabled,
+            userRules = SilencerStore.loadRules(this),
+        )
         val result = processor.evaluate(snapshot)
         Log.i(
             TAG,

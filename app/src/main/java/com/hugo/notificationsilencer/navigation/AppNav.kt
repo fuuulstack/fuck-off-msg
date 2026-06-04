@@ -54,10 +54,24 @@ fun AppNav(
             record = repository.history().first { it.id == markingRecordId },
             onBack = { markingRecordId = null },
             onAddWhitelist = { keywords, scope ->
-                repository.addKeywords(keywords, allow = true, scope = scope)
+                val record = repository.history().first { it.id == markingRecordId }
+                repository.addKeywords(
+                    keywords = keywords,
+                    allow = true,
+                    scope = scope,
+                    packageName = record.packageName,
+                    appName = record.appName,
+                )
             },
             onAddBlacklist = { keywords, scope ->
-                repository.addKeywords(keywords, allow = false, scope = scope)
+                val record = repository.history().first { it.id == markingRecordId }
+                repository.addKeywords(
+                    keywords = keywords,
+                    allow = false,
+                    scope = scope,
+                    packageName = record.packageName,
+                    appName = record.appName,
+                )
             },
         )
         return
@@ -113,6 +127,9 @@ fun AppNav(
             )
             AppDestination.Rules -> RulesScreen(
                 rules = repository.rules(),
+                enhancedMarketingRulesEnabled = repository.settings().enhancedMarketingRulesEnabled,
+                onEnhancedMarketingRulesEnabledChange = repository::setEnhancedMarketingRulesEnabled,
+                onDeleteRules = repository::deleteRules,
                 modifier = Modifier.padding(innerPadding),
             )
             AppDestination.Settings -> SettingsScreen(

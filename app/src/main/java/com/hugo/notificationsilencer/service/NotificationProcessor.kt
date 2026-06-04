@@ -1,11 +1,14 @@
 package com.hugo.notificationsilencer.service
 
+import com.hugo.notificationsilencer.data.RuleItem
+import com.hugo.notificationsilencer.data.RuleScope
 import com.hugo.notificationsilencer.rules.DefaultKeywords
 import com.hugo.notificationsilencer.rules.RuleEngine
 import com.hugo.notificationsilencer.rules.RuleResult
 
 class NotificationProcessor(
     private val enhancedEnabled: Boolean = false,
+    private val userRules: List<RuleItem> = emptyList(),
 ) {
     private val systemWhitelist = setOf(
         "android",
@@ -18,12 +21,16 @@ class NotificationProcessor(
     )
 
     fun evaluate(snapshot: NotificationSnapshot): RuleResult {
+        val relevantRules = userRules.filter { rule ->
+            rule.scope == RuleScope.Global ||
+                (rule.scope == RuleScope.CurrentApp && rule.packageName == snapshot.packageName)
+        }
         return RuleEngine.evaluate(
             text = snapshot.searchableText,
             packageName = snapshot.packageName,
             systemWhitelist = systemWhitelist,
-            userWhitelist = emptySet(),
-            userBlacklist = emptySet(),
+            userWhitelist = relevantRules.filter { it.allow }.map { it.keyword }.toSet(),
+            userBlacklist = relevantRules.filter { !it.allow }.map { it.keyword }.toSet(),
             conservativeKeywords = DefaultKeywords.Conservative,
             enhancedKeywords = DefaultKeywords.Enhanced,
             enhancedEnabled = enhancedEnabled,

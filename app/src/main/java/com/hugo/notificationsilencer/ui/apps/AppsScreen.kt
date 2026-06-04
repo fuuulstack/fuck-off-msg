@@ -34,6 +34,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -60,6 +61,9 @@ import com.hugo.notificationsilencer.ui.components.GlassCard
 import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatusPill
 import com.hugo.notificationsilencer.ui.history.SwipeRevealHistoryCard
+import com.hugo.notificationsilencer.ui.history.dismissHistoryActionsOnBlankTap
+import com.hugo.notificationsilencer.ui.selection.SelectionActionRow
+import com.hugo.notificationsilencer.ui.selection.selectAllIds
 import kotlinx.coroutines.launch
 
 @Composable
@@ -313,11 +317,25 @@ private fun AppNotificationsScreen(
     modifier: Modifier = Modifier,
 ) {
     val appName = summary?.appName ?: records.firstOrNull()?.appName ?: packageName
+    var activeActionRecordId by remember { mutableStateOf<Long?>(null) }
+    var selectedRecordIds by remember(packageName) { mutableStateOf(setOf<Long>()) }
+    val visibleRecordIds = remember(records) { records.map { it.id } }
+    val selectedVisibleRecordIds = selectedRecordIds.intersect(visibleRecordIds.toSet())
+    val selectionMode = selectedRecordIds.isNotEmpty()
+
+    LaunchedEffect(records) {
+        val existingIds = records.map { it.id }.toSet()
+        selectedRecordIds = selectedRecordIds.intersect(existingIds)
+    }
 
     GlassBackground(modifier = modifier) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .dismissHistoryActionsOnBlankTap(
+                    actionsVisible = activeActionRecordId != null,
+                    onDismiss = { activeActionRecordId = null },
+                )
                 .padding(horizontal = 16.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -327,7 +345,11 @@ private fun AppNotificationsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     IconButton(
-                        onClick = onBack,
+                        onClick = {
+                            activeActionRecordId = null
+                            selectedRecordIds = emptySet()
+                            onBack()
+                        },
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
                             .background(Color.White.copy(alpha = 0.92f))
@@ -359,11 +381,50 @@ private fun AppNotificationsScreen(
                     }
                 }
             } else {
+                if (selectionMode) {
+                    item {
+                        SelectionActionRow(
+                            selectedCount = selectedVisibleRecordIds.size,
+                            allSelected = visibleRecordIds.isNotEmpty() && selectedVisibleRecordIds.size == visibleRecordIds.size,
+                            onSelectAllChange = { checked ->
+                                selectedRecordIds = if (checked) selectAllIds(visibleRecordIds) else emptySet()
+                            },
+                            onDeleteSelected = {
+                                val idsToDelete = selectedVisibleRecordIds
+                                activeActionRecordId = null
+                                selectedRecordIds = emptySet()
+                                records
+                                    .filter { idsToDelete.contains(it.id) }
+                                    .forEach(onDelete)
+                            },
+                        )
+                    }
+                }
                 items(records, key = { it.id }) { record ->
                     SwipeRevealHistoryCard(
                         record = record,
+                        actionsVisible = activeActionRecordId == record.id,
+                        selectionMode = selectionMode,
+                        selected = selectedRecordIds.contains(record.id),
+                        onShowActions = { activeActionRecordId = record.id },
+                        onDismissActions = { activeActionRecordId = null },
+                        onLongPress = {
+                            activeActionRecordId = null
+                            selectedRecordIds = selectedRecordIds + record.id
+                        },
+                        onToggleSelection = {
+                            selectedRecordIds = if (selectedRecordIds.contains(record.id)) {
+                                selectedRecordIds - record.id
+                            } else {
+                                selectedRecordIds + record.id
+                            }
+                        },
                         onMark = { onMark(record) },
-                        onDelete = { onDelete(record) },
+                        onDelete = {
+                            activeActionRecordId = null
+                            selectedRecordIds = selectedRecordIds - record.id
+                            onDelete(record)
+                        },
                     )
                 }
             }

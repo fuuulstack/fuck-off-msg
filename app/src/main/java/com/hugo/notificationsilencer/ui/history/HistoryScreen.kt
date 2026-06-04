@@ -3,36 +3,39 @@ package com.hugo.notificationsilencer.ui.history
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
@@ -42,14 +45,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.pointerInput
@@ -68,13 +71,20 @@ import com.hugo.notificationsilencer.theme.SecondaryText
 import com.hugo.notificationsilencer.ui.components.AppAvatar
 import com.hugo.notificationsilencer.ui.components.GlassBackground
 import com.hugo.notificationsilencer.ui.components.GlassCard
+import com.hugo.notificationsilencer.ui.components.IconLabelButton
 import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatItem
 import com.hugo.notificationsilencer.ui.components.rememberAppLabel
+import com.hugo.notificationsilencer.ui.gestures.DragIntent
+import com.hugo.notificationsilencer.ui.gestures.dragIntent
+import com.hugo.notificationsilencer.ui.selection.SelectionActionRow
+import com.hugo.notificationsilencer.ui.selection.selectAllIds
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 
 @Composable
 fun HistoryScreen(
@@ -88,15 +98,35 @@ fun HistoryScreen(
     modifier: Modifier = Modifier,
 ) {
     var query by remember { mutableStateOf("") }
+    var decisionFilter by remember { mutableStateOf(HistoryDecisionFilter.All) }
+    var activeActionRecordId by remember { mutableStateOf<Long?>(null) }
+    var selectedRecordIds by remember { mutableStateOf(setOf<Long>()) }
     val todayRecords = remember(records) { records.filter { it.isToday() } }
-    val filteredRecords = remember(todayRecords, query) { todayRecords.filter { it.matchesQuery(query) } }
-    val blockedCount = filteredRecords.count { it.decision == NotificationDecision.Blocked }
-    val allowedCount = filteredRecords.size - blockedCount
+    val queryMatchedRecords = remember(todayRecords, query) {
+        filterHistoryRecords(todayRecords, query, HistoryDecisionFilter.All)
+    }
+    val filteredRecords = remember(queryMatchedRecords, decisionFilter) {
+        filterHistoryRecords(queryMatchedRecords, query = "", decisionFilter = decisionFilter)
+    }
+    val blockedCount = queryMatchedRecords.count { it.decision == NotificationDecision.Blocked }
+    val allowedCount = queryMatchedRecords.size - blockedCount
+    val visibleRecordIds = remember(filteredRecords) { filteredRecords.map { it.id } }
+    val selectedVisibleRecordIds = selectedRecordIds.intersect(visibleRecordIds.toSet())
+    val selectionMode = selectedRecordIds.isNotEmpty()
+
+    LaunchedEffect(records) {
+        val existingIds = records.map { it.id }.toSet()
+        selectedRecordIds = selectedRecordIds.intersect(existingIds)
+    }
 
     GlassBackground(modifier = modifier) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .dismissHistoryActionsOnBlankTap(
+                    actionsVisible = activeActionRecordId != null,
+                    onDismiss = { activeActionRecordId = null },
+                )
                 .padding(horizontal = 16.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -112,7 +142,10 @@ fun HistoryScreen(
                         modifier = Modifier.weight(1f),
                     )
                     IconButton(
-                        onClick = onClearHistory,
+                        onClick = {
+                            activeActionRecordId = null
+                            onClearHistory()
+                        },
                         enabled = records.isNotEmpty(),
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
@@ -120,9 +153,9 @@ fun HistoryScreen(
                             .size(48.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.CleaningServices,
+                            imageVector = Icons.Filled.Delete,
                             contentDescription = "清空历史",
-                            tint = if (records.isNotEmpty()) SecondaryText else SecondaryText.copy(alpha = 0.35f),
+                            tint = if (records.isNotEmpty()) MistRed else MistRed.copy(alpha = 0.35f),
                         )
                     }
                 }
@@ -139,7 +172,11 @@ fun HistoryScreen(
             item {
                 OutlinedTextField(
                     value = query,
-                    onValueChange = { query = it },
+                    onValueChange = {
+                        activeActionRecordId = null
+                        selectedRecordIds = emptySet()
+                        query = it
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
@@ -160,32 +197,89 @@ fun HistoryScreen(
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatItem(
                         label = "通知",
-                        value = filteredRecords.size.toString(),
+                        value = queryMatchedRecords.size.toString(),
                         icon = Icons.Filled.Notifications,
                         modifier = Modifier.weight(1f),
+                        selected = decisionFilter == HistoryDecisionFilter.All,
+                        onClick = {
+                            activeActionRecordId = null
+                            selectedRecordIds = emptySet()
+                            decisionFilter = HistoryDecisionFilter.All
+                        },
                     )
                     StatItem(
                         label = "拦截",
                         value = blockedCount.toString(),
                         icon = Icons.Filled.Block,
                         modifier = Modifier.weight(1f),
+                        selected = decisionFilter == HistoryDecisionFilter.Blocked,
+                        onClick = {
+                            activeActionRecordId = null
+                            selectedRecordIds = emptySet()
+                            decisionFilter = HistoryDecisionFilter.Blocked
+                        },
                     )
                     StatItem(
                         label = "放行",
                         value = allowedCount.toString(),
                         icon = Icons.Filled.CheckCircle,
                         modifier = Modifier.weight(1f),
+                        selected = decisionFilter == HistoryDecisionFilter.Allowed,
+                        onClick = {
+                            activeActionRecordId = null
+                            selectedRecordIds = emptySet()
+                            decisionFilter = HistoryDecisionFilter.Allowed
+                        },
                     )
                 }
             }
             if (filteredRecords.isEmpty()) {
                 item { EmptyHistoryCard() }
             } else {
+                if (selectionMode) {
+                    item {
+                        SelectionActionRow(
+                            selectedCount = selectedVisibleRecordIds.size,
+                            allSelected = visibleRecordIds.isNotEmpty() && selectedVisibleRecordIds.size == visibleRecordIds.size,
+                            onSelectAllChange = { checked ->
+                                selectedRecordIds = if (checked) selectAllIds(visibleRecordIds) else emptySet()
+                            },
+                            onDeleteSelected = {
+                                val idsToDelete = selectedVisibleRecordIds
+                                activeActionRecordId = null
+                                selectedRecordIds = emptySet()
+                                filteredRecords
+                                    .filter { idsToDelete.contains(it.id) }
+                                    .forEach(onDelete)
+                            },
+                        )
+                    }
+                }
                 items(filteredRecords, key = { it.id }) { record ->
                     SwipeRevealHistoryCard(
                         record = record,
+                        actionsVisible = activeActionRecordId == record.id,
+                        selectionMode = selectionMode,
+                        selected = selectedRecordIds.contains(record.id),
+                        onShowActions = { activeActionRecordId = record.id },
+                        onDismissActions = { activeActionRecordId = null },
+                        onLongPress = {
+                            activeActionRecordId = null
+                            selectedRecordIds = selectedRecordIds + record.id
+                        },
+                        onToggleSelection = {
+                            selectedRecordIds = if (selectedRecordIds.contains(record.id)) {
+                                selectedRecordIds - record.id
+                            } else {
+                                selectedRecordIds + record.id
+                            }
+                        },
                         onMark = { onMark(record) },
-                        onDelete = { onDelete(record) },
+                        onDelete = {
+                            activeActionRecordId = null
+                            selectedRecordIds = selectedRecordIds - record.id
+                            onDelete(record)
+                        },
                     )
                 }
             }
@@ -265,126 +359,180 @@ private fun EmptyHistoryCard() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SwipeRevealHistoryCard(
     record: NotificationRecord,
+    actionsVisible: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onShowActions: () -> Unit,
+    onDismissActions: () -> Unit,
+    onLongPress: () -> Unit,
+    onToggleSelection: () -> Unit,
     onMark: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    val actionWidth = 138.dp
-    val quickSettleDistance = 24.dp
     val density = LocalDensity.current
-    val actionWidthPx = with(density) { actionWidth.toPx() }
-    val quickSettleDistancePx = with(density) { quickSettleDistance.toPx() }
-    val animatedOffset = remember(record.id) { Animatable(0f) }
-    var dragOffset by remember(record.id) { mutableStateOf(0f) }
-    var useDragOffset by remember(record.id) { mutableStateOf(false) }
-    var revealed by remember(record.id) { mutableStateOf(false) }
-    var settleStart by remember(record.id) { mutableStateOf(0f) }
-    var settleTarget by remember(record.id) { mutableStateOf(0f) }
-    var settleRequest by remember(record.id) { mutableStateOf(0) }
-    val displayOffset = if (useDragOffset) dragOffset else animatedOffset.value
+    val deleteThresholdPx = with(density) { 80.dp.toPx() }
+    val deleteExitPx = with(density) { 420.dp.toPx() }
+    val deleteOffset = remember(record.id) { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    var deleting by remember(record.id) { mutableStateOf(false) }
 
-    LaunchedEffect(settleRequest) {
-        if (settleRequest == 0) return@LaunchedEffect
-        animatedOffset.snapTo(settleStart)
-        useDragOffset = false
-        animatedOffset.animateTo(
-            targetValue = settleTarget,
-            animationSpec = tween(durationMillis = 180),
-        )
+    fun animateSwipeDelete(direction: Float) {
+        if (deleting) return
+        deleting = true
+        scope.launch {
+            deleteOffset.animateTo(
+                targetValue = direction * deleteExitPx,
+                animationSpec = tween(durationMillis = 180),
+            )
+            onDelete()
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clipToBounds()
-            .pointerInput(record.id) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    val startedRevealed = revealed
-                    dragOffset = if (revealed) -actionWidthPx else 0f
-                    useDragOffset = true
+            .combinedClickable(
+                onClick = {
+                    if (selectionMode) onToggleSelection() else onShowActions()
+                },
+                onLongClick = onLongPress,
+            )
+            .then(
+                if (selectionMode) {
+                    Modifier
+                } else {
+                    Modifier.pointerInput(record.id) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            var totalX = 0f
+                            var totalY = 0f
+                            var intent = DragIntent.Undecided
 
-                    do {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull() ?: break
-                        val dragAmount = change.positionChange().x
-                        if (dragAmount != 0f) {
-                            dragOffset = (dragOffset + dragAmount).coerceIn(-actionWidthPx, 0f)
-                            change.consume()
+                            do {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: break
+                                val delta = change.positionChange()
+                                totalX += delta.x
+                                totalY += delta.y
+                                if (intent == DragIntent.Undecided) {
+                                    intent = dragIntent(totalX, totalY, viewConfiguration.touchSlop)
+                                }
+                                if (intent == DragIntent.HorizontalAction && delta.x != 0f) {
+                                    change.consume()
+                                }
+                            } while (event.changes.any { !it.changedToUpIgnoreConsumed() })
+
+                            if (intent == DragIntent.VerticalScroll) {
+                                return@awaitEachGesture
+                            }
+
+                            when (historySwipeAction(totalX, deleteThresholdPx)) {
+                                HistorySwipeAction.Delete -> animateSwipeDelete(if (totalX < 0f) -1f else 1f)
+                                HistorySwipeAction.None -> Unit
+                            }
                         }
-                    } while (event.changes.any { !it.changedToUpIgnoreConsumed() })
-
-                    revealed = if (startedRevealed) {
-                        dragOffset < -actionWidthPx + quickSettleDistancePx
-                    } else {
-                        dragOffset < -quickSettleDistancePx
                     }
-                    settleStart = dragOffset
-                    settleTarget = if (revealed) -actionWidthPx else 0f
-                    settleRequest += 1
-                }
-            },
+                },
+            ),
     ) {
         Box(
             modifier = Modifier.graphicsLayer {
-                translationX = displayOffset
+                translationX = deleteOffset.value
+                alpha = (1f - abs(deleteOffset.value) / deleteExitPx).coerceIn(0f, 1f)
             },
         ) {
-            HistoryCard(record = record)
-        }
+            HistoryCard(record = record, selectionMode = selectionMode, selected = selected)
 
-        Row(
-            modifier = Modifier
-                .matchParentSize()
-                .graphicsLayer {
-                    translationX = actionWidthPx + displayOffset
-                }
-                .padding(start = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            HistorySwipeActionButton(
-                icon = Icons.Filled.Sell,
-                contentDescription = "标记",
-                onClick = onMark,
-            )
-            HistorySwipeActionButton(
-                icon = Icons.Filled.Delete,
-                contentDescription = "删除",
-                onClick = onDelete,
-            )
+            if (actionsVisible && !selectionMode) {
+                HistoryActionOverlay(
+                    onDismiss = onDismissActions,
+                    onMark = {
+                        onDismissActions()
+                        onMark()
+                    },
+                    onDelete = {
+                        onDismissActions()
+                        onDelete()
+                    },
+                )
+            }
         }
     }
 }
+
+fun Modifier.dismissHistoryActionsOnBlankTap(
+    actionsVisible: Boolean,
+    onDismiss: () -> Unit,
+): Modifier {
+    if (!actionsVisible) return this
+    return pointerInput(actionsVisible) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = true)
+            var moved = false
+            do {
+                val event = awaitPointerEvent()
+                event.changes.forEach { change ->
+                    val delta = change.positionChange()
+                    if (delta.x != 0f || delta.y != 0f) {
+                        moved = true
+                    }
+                }
+            } while (event.changes.any { !it.changedToUpIgnoreConsumed() })
+
+            if (!moved) {
+                onDismiss()
+            }
+        }
+    }
+}
+
 @Composable
-private fun HistorySwipeActionButton(
-    icon: ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
+private fun BoxScope.HistoryActionOverlay(
+    onDismiss: () -> Unit,
+    onMark: () -> Unit,
+    onDelete: () -> Unit,
 ) {
     Box(
         modifier = Modifier
-            .width(58.dp)
-            .fillMaxHeight()
-            .clip(RoundedCornerShape(24.dp))
-            .background(Color.White.copy(alpha = 0.74f)),
+            .matchParentSize()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.Black.copy(alpha = 0.28f))
+            .clickable(onClick = onDismiss),
         contentAlignment = Alignment.Center,
     ) {
-        IconButton(onClick = onClick) {
-            Icon(
-                imageVector = icon,
-                contentDescription = contentDescription,
-                tint = SecondaryText,
-                modifier = Modifier.size(28.dp),
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconLabelButton(
+                text = "标记",
+                icon = Icons.Filled.Edit,
+                onClick = onMark,
+                containerColor = Color.White,
+                contentColor = PrimaryText,
+            )
+            IconLabelButton(
+                text = "删除",
+                icon = Icons.Filled.Delete,
+                onClick = onDelete,
+                containerColor = MistRed,
+                contentColor = Color.White,
             )
         }
     }
 }
 
 @Composable
-private fun HistoryCard(record: NotificationRecord) {
+private fun HistoryCard(
+    record: NotificationRecord,
+    selectionMode: Boolean,
+    selected: Boolean,
+) {
     val appLabel = rememberAppLabel(record.packageName, record.appName)
     val snippet = notificationSnippet(
         title = record.title,
@@ -404,7 +552,23 @@ private fun HistoryCard(record: NotificationRecord) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AppAvatar(appName = appLabel, packageName = record.packageName, modifier = Modifier.size(42.dp))
+            if (selectionMode) {
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = null,
+                    colors = CheckboxDefaults.colors(
+                        checkedColor = PrimaryText,
+                        uncheckedColor = SecondaryText,
+                        checkmarkColor = Color.White,
+                    ),
+                )
+            }
+            AppAvatar(
+                appName = appLabel,
+                packageName = record.packageName,
+                modifier = Modifier.size(42.dp),
+                showContainer = false,
+            )
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -462,9 +626,3 @@ private fun NotificationRecord.isToday(): Boolean {
     return recordDate == LocalDate.now(zoneId)
 }
 
-private fun NotificationRecord.matchesQuery(query: String): Boolean {
-    val normalized = query.trim()
-    if (normalized.isEmpty()) return true
-    return listOf(appName, packageName, title, body, matchedKeyword.orEmpty())
-        .any { it.contains(normalized, ignoreCase = true) }
-}

@@ -3,10 +3,9 @@ package com.hugo.notificationsilencer.ui.components
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Build
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +19,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -41,7 +38,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import com.hugo.notificationsilencer.theme.AppBackground
-import com.hugo.notificationsilencer.theme.GlassBorder
 import com.hugo.notificationsilencer.theme.GlassWhite
 import com.hugo.notificationsilencer.theme.MutedText
 import com.hugo.notificationsilencer.theme.PrimaryText
@@ -65,14 +61,15 @@ fun GlassBackground(
 @Composable
 fun GlassCard(
     modifier: Modifier = Modifier,
+    containerColor: Color = GlassWhite,
     content: @Composable () -> Unit,
 ) {
-    Card(
+    Surface(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = GlassWhite),
-        border = BorderStroke(1.dp, GlassBorder),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        color = containerColor,
+        shadowElevation = 1.dp,
+        tonalElevation = 0.dp,
     ) {
         content()
     }
@@ -94,7 +91,6 @@ fun PageHeader(
             Surface(
                 shape = CircleShape,
                 color = Color.White.copy(alpha = 0.75f),
-                border = BorderStroke(1.dp, GlassBorder),
             ) {
                 Icon(
                     imageVector = icon,
@@ -134,7 +130,6 @@ fun StatusPill(
         modifier = modifier
             .clip(RoundedCornerShape(999.dp))
             .background(containerColor)
-            .border(1.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(999.dp))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -160,6 +155,7 @@ fun AppAvatar(
     appName: String,
     packageName: String? = null,
     modifier: Modifier = Modifier,
+    showContainer: Boolean = true,
 ) {
     val label = appName.firstOrNull()?.uppercaseChar()?.toString() ?: "A"
     val context = LocalContext.current
@@ -171,11 +167,7 @@ fun AppAvatar(
         }
     }
     Box(
-        modifier = modifier
-            .size(44.dp)
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = 0.78f))
-            .border(1.dp, GlassBorder, CircleShape),
+        modifier = modifier.avatarContainer(showContainer),
         contentAlignment = Alignment.Center,
     ) {
         if (icon != null) {
@@ -195,6 +187,17 @@ fun AppAvatar(
                 fontWeight = FontWeight.SemiBold,
             )
         }
+    }
+}
+
+private fun Modifier.avatarContainer(showContainer: Boolean): Modifier {
+    return if (showContainer) {
+        this
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = 0.78f))
+    } else {
+        this.size(44.dp)
     }
 }
 
@@ -261,8 +264,13 @@ fun StatItem(
     value: String,
     icon: ImageVector,
     modifier: Modifier = Modifier,
+    selected: Boolean = false,
+    onClick: (() -> Unit)? = null,
 ) {
-    GlassCard(modifier = modifier) {
+    GlassCard(
+        modifier = modifier.then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+        containerColor = if (selected) SoftGray else GlassWhite,
+    ) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -296,7 +304,6 @@ fun GlassActionRow(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .background(Color.White.copy(alpha = 0.9f))
-            .border(1.dp, GlassBorder, RoundedCornerShape(20.dp))
             .padding(10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,

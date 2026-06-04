@@ -3,6 +3,7 @@ package com.hugo.notificationsilencer.data
 class InMemorySilencerRepository private constructor(
     private val historyRecords: MutableList<NotificationRecord>,
     private val ruleItems: MutableList<RuleItem>,
+    private var settings: SilencerSettings = SilencerSettings(),
 ) : SilencerRepository {
     override fun history(): List<NotificationRecord> {
         return historyRecords.sortedByDescending { it.id }
@@ -27,16 +28,38 @@ class InMemorySilencerRepository private constructor(
         return ruleItems.toList()
     }
 
-    override fun addKeywords(keywords: List<String>, allow: Boolean, scope: RuleScope) {
+    override fun settings(): SilencerSettings {
+        return settings
+    }
+
+    override fun setEnhancedMarketingRulesEnabled(enabled: Boolean) {
+        settings = settings.copy(enhancedMarketingRulesEnabled = enabled)
+    }
+
+    override fun addKeywords(
+        keywords: List<String>,
+        allow: Boolean,
+        scope: RuleScope,
+        packageName: String?,
+        appName: String?,
+    ) {
         val nextId = (ruleItems.maxOfOrNull { it.id } ?: 0L) + 1L
+        val scopedPackageName = packageName.takeIf { scope == RuleScope.CurrentApp }
+        val scopedAppName = appName.takeIf { scope == RuleScope.CurrentApp }
         keywords.distinct().forEachIndexed { index, keyword ->
             ruleItems += RuleItem(
                 id = nextId + index,
                 keyword = keyword,
                 allow = allow,
                 scope = scope,
+                packageName = scopedPackageName,
+                appName = scopedAppName,
             )
         }
+    }
+
+    override fun deleteRules(ids: Set<Long>) {
+        ruleItems.removeAll { ids.contains(it.id) }
     }
 
     override fun deleteHistoryRecord(id: Long) {

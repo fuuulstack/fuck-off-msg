@@ -15,6 +15,7 @@ object SilencerStore {
     private const val PREFS = "notification_silencer_store"
     private const val KEY_HISTORY = "history"
     private const val KEY_RULES = "rules"
+    private const val KEY_SETTINGS = "settings"
 
     fun loadHistory(context: Context): List<NotificationRecord> {
         val array = JSONArray(context.prefs().getString(KEY_HISTORY, "[]"))
@@ -35,6 +36,10 @@ object SilencerStore {
         }
     }
 
+    fun loadSettings(context: Context): SilencerSettings {
+        return context.prefs().getString(KEY_SETTINGS, "{}").orEmpty().toSilencerSettings()
+    }
+
     fun saveHistory(context: Context, records: List<NotificationRecord>) {
         val array = JSONArray()
         records.forEach { array.put(it.toJson()) }
@@ -45,6 +50,10 @@ object SilencerStore {
         val array = JSONArray()
         rules.forEach { array.put(it.toJson()) }
         context.prefs().edit().putString(KEY_RULES, array.toString()).apply()
+    }
+
+    fun saveSettings(context: Context, settings: SilencerSettings) {
+        context.prefs().edit().putString(KEY_SETTINGS, settings.toJsonString()).apply()
     }
 
     fun registerHistoryListener(
@@ -156,6 +165,8 @@ private fun RuleItem.toJson(): JSONObject {
         .put("keyword", keyword)
         .put("allow", allow)
         .put("scope", scope.name)
+        .put("packageName", packageName)
+        .put("appName", appName)
 }
 
 private fun JSONObject.toRuleItem(): RuleItem {
@@ -164,5 +175,7 @@ private fun JSONObject.toRuleItem(): RuleItem {
         keyword = getString("keyword"),
         allow = getBoolean("allow"),
         scope = RuleScope.valueOf(getString("scope")),
+        packageName = optString("packageName").takeIf { it.isNotBlank() && it != "null" },
+        appName = optString("appName").takeIf { it.isNotBlank() && it != "null" },
     )
 }
