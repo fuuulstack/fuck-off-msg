@@ -1,6 +1,7 @@
 package com.hugo.notificationsilencer.ui.rules
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -8,25 +9,33 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Rule
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,8 +48,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.hugo.notificationsilencer.data.APP_WIDE_BLOCK_LABEL
+import com.hugo.notificationsilencer.data.AppLanguage
+import com.hugo.notificationsilencer.data.AppSummary
 import com.hugo.notificationsilencer.data.RuleItem
 import com.hugo.notificationsilencer.data.RuleScope
+import com.hugo.notificationsilencer.data.isAppWideBlockRule
 import com.hugo.notificationsilencer.rules.DefaultKeywords
 import com.hugo.notificationsilencer.theme.MistBlue
 import com.hugo.notificationsilencer.theme.MistBlueContainer
@@ -56,6 +69,7 @@ import com.hugo.notificationsilencer.ui.components.GlassBackground
 import com.hugo.notificationsilencer.ui.components.GlassCard
 import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatusPill
+import com.hugo.notificationsilencer.ui.i18n.LocalSilencerStrings
 import com.hugo.notificationsilencer.ui.selection.SelectionActionRow
 import com.hugo.notificationsilencer.ui.selection.selectAllIds
 
@@ -63,12 +77,23 @@ import com.hugo.notificationsilencer.ui.selection.selectAllIds
 @Composable
 fun RulesScreen(
     rules: List<RuleItem>,
+    appSummaries: List<AppSummary>,
+    appLanguage: AppLanguage,
     enhancedMarketingRulesEnabled: Boolean,
     onEnhancedMarketingRulesEnabledChange: (Boolean) -> Unit,
+    onAddRule: (
+        keyword: String,
+        allow: Boolean,
+        scope: RuleScope,
+        packageName: String?,
+        appName: String?,
+    ) -> Unit,
     onDeleteRules: (Set<Long>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalSilencerStrings.current
     var selectedRuleIds by remember { mutableStateOf(setOf<Long>()) }
+    var addingRule by remember { mutableStateOf(false) }
     val visibleRuleIds = remember(rules) { rules.map { it.id } }
     val selectedVisibleRuleIds = selectedRuleIds.intersect(visibleRuleIds.toSet())
     val selectionMode = selectedRuleIds.isNotEmpty()
@@ -76,6 +101,17 @@ fun RulesScreen(
     LaunchedEffect(rules) {
         val existingIds = rules.map { it.id }.toSet()
         selectedRuleIds = selectedRuleIds.intersect(existingIds)
+    }
+
+    if (addingRule) {
+        AddRuleDialog(
+            appSummaries = appSummaries,
+            onDismiss = { addingRule = false },
+            onConfirm = { keyword, allow, scope, packageName, appName ->
+                onAddRule(keyword, allow, scope, packageName, appName)
+                addingRule = false
+            },
+        )
     }
 
     GlassBackground(modifier = modifier) {
@@ -87,8 +123,8 @@ fun RulesScreen(
         ) {
             item {
                 PageHeader(
-                    title = "规则",
-                    subtitle = "系统级优先，白名单优先",
+                    title = strings.rules,
+                    subtitle = strings.rulesSubtitle,
                     icon = Icons.AutoMirrored.Filled.Rule,
                 )
             }
@@ -97,10 +133,10 @@ fun RulesScreen(
             }
             item {
                 KeywordCard(
-                    title = "默认保守规则",
-                    subtitle = "内置营销关键词，适合日常低误伤拦截",
+                    title = strings.defaultConservativeRules,
+                    subtitle = strings.defaultConservativeRulesSubtitle,
                     icon = Icons.Filled.Shield,
-                    keywords = DefaultKeywords.Conservative,
+                    keywords = DefaultKeywords.conservativeFor(appLanguage),
                 )
             }
             item {
@@ -117,13 +153,13 @@ fun RulesScreen(
                         )
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(
-                                text = "严格模式",
+                                text = strings.strictMode,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = PrimaryText,
                             )
                             Text(
-                                text = "开启后拦截更激进，误伤风险也更高",
+                                text = strings.strictModeSubtitle,
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = SecondaryText,
                             )
@@ -143,13 +179,30 @@ fun RulesScreen(
                 }
             }
             item {
-                SectionLabel(title = "我的规则", icon = Icons.Filled.Tune)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SectionLabel(
+                        title = strings.myRules,
+                        icon = Icons.Filled.Tune,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = { addingRule = true }) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = strings.addRule,
+                            tint = PrimaryText,
+                        )
+                    }
+                }
             }
             if (rules.isEmpty()) {
                 item {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = "还没有手动添加的规则。可以在历史通知里点击标记后涂抹关键词。",
+                            text = strings.noManualRules,
                             modifier = Modifier.padding(16.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = SecondaryText,
@@ -194,7 +247,157 @@ fun RulesScreen(
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+private fun AddRuleDialog(
+    appSummaries: List<AppSummary>,
+    onDismiss: () -> Unit,
+    onConfirm: (
+        keyword: String,
+        allow: Boolean,
+        scope: RuleScope,
+        packageName: String?,
+        appName: String?,
+    ) -> Unit,
+) {
+    val strings = LocalSilencerStrings.current
+    var keyword by remember { mutableStateOf("") }
+    var allow by remember { mutableStateOf(false) }
+    var scope by remember { mutableStateOf(RuleScope.Global) }
+    var selectedAppPackage by remember(appSummaries) { mutableStateOf(appSummaries.firstOrNull()?.packageName) }
+    val selectedApp = appSummaries.firstOrNull { it.packageName == selectedAppPackage }
+    val canConfirm = keyword.trim().isNotEmpty() && (scope == RuleScope.Global || selectedApp != null)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(strings.addRuleTitle) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    FilterChip(
+                        selected = !allow,
+                        onClick = { allow = false },
+                        label = { Text(strings.blacklist) },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Block, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                    )
+                    FilterChip(
+                        selected = allow,
+                        onClick = { allow = true },
+                        label = { Text(strings.whitelist) },
+                        leadingIcon = {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                    )
+                    FilterChip(
+                        selected = scope == RuleScope.Global,
+                        onClick = { scope = RuleScope.Global },
+                        label = { Text(strings.global) },
+                    )
+                    FilterChip(
+                        selected = scope == RuleScope.CurrentApp,
+                        onClick = {
+                            scope = RuleScope.CurrentApp
+                            if (selectedAppPackage == null) {
+                                selectedAppPackage = appSummaries.firstOrNull()?.packageName
+                            }
+                        },
+                        label = { Text(strings.specificApp) },
+                    )
+                }
+                OutlinedTextField(
+                    value = keyword,
+                    onValueChange = { keyword = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text(strings.keyword) },
+                )
+                if (scope == RuleScope.CurrentApp) {
+                    if (appSummaries.isEmpty()) {
+                        Text(
+                            text = strings.noSelectableApps,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SecondaryText,
+                        )
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.heightIn(max = 180.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            items(appSummaries, key = { it.packageName }) { app ->
+                                AppRuleTargetRow(
+                                    app = app,
+                                    selected = selectedAppPackage == app.packageName,
+                                    onClick = { selectedAppPackage = app.packageName },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm(
+                        keyword.trim(),
+                        allow,
+                        scope,
+                        selectedApp?.packageName.takeIf { scope == RuleScope.CurrentApp },
+                        selectedApp?.appName.takeIf { scope == RuleScope.CurrentApp },
+                    )
+                },
+                enabled = canConfirm,
+            ) {
+                Text(strings.add)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(strings.cancel)
+            }
+        },
+    )
+}
+
+@Composable
+private fun AppRuleTargetRow(
+    app: AppSummary,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    GlassCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppAvatar(appName = app.appName, packageName = app.packageName, modifier = Modifier.size(28.dp))
+            Text(
+                text = app.appName,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = PrimaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (selected) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MistGreen)
+            }
+        }
+    }
+}
+
+@Composable
 private fun PriorityCard() {
+    val strings = LocalSilencerStrings.current
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -203,7 +406,7 @@ private fun PriorityCard() {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(imageVector = Icons.Filled.Security, contentDescription = null, tint = MistBlue)
                 Text(
-                    text = "规则优先级",
+                    text = strings.rulePriority,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = PrimaryText,
@@ -211,13 +414,13 @@ private fun PriorityCard() {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 StatusPill(
-                    text = "系统级优先",
+                    text = strings.systemFirst,
                     icon = Icons.Filled.Security,
                     containerColor = MistBlueContainer,
                     contentColor = MistBlue,
                 )
                 StatusPill(
-                    text = "白名单优先",
+                    text = strings.whitelistFirst,
                     icon = Icons.Filled.CheckCircle,
                     containerColor = MistGreenContainer,
                     contentColor = MistGreen,
@@ -267,9 +470,13 @@ private fun KeywordCard(
 }
 
 @Composable
-private fun SectionLabel(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+private fun SectionLabel(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier,
+) {
     Row(
-        modifier = Modifier.padding(top = 4.dp),
+        modifier = modifier.padding(top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -292,7 +499,8 @@ private fun RuleCard(
     onLongPress: () -> Unit,
     onToggleSelection: () -> Unit,
 ) {
-    val label = if (rule.allow) "白名单" else "黑名单"
+    val strings = LocalSilencerStrings.current
+    val label = if (rule.allow) strings.whitelist else strings.blacklist
     val icon = if (rule.allow) Icons.Filled.CheckCircle else Icons.Filled.Block
     val container = if (rule.allow) MistGreenContainer else MistRedContainer
     val content = if (rule.allow) MistGreen else MistRed
@@ -327,7 +535,7 @@ private fun RuleCard(
             StatusPill(text = label, icon = icon, containerColor = container, contentColor = content)
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = rule.keyword,
+                    text = if (rule.isAppWideBlockRule()) strings.allNotifications else rule.keyword,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = PrimaryText,
@@ -340,10 +548,11 @@ private fun RuleCard(
 
 @Composable
 private fun RuleScopeLine(scopePresentation: RuleScopePresentation) {
+    val strings = LocalSilencerStrings.current
     when (scopePresentation) {
         RuleScopePresentation.Global -> {
             Text(
-                text = RuleScope.Global.scopeLabel(),
+                text = strings.globalRule,
                 style = MaterialTheme.typography.bodySmall,
                 color = SecondaryText,
             )
@@ -369,17 +578,10 @@ private fun RuleScopeLine(scopePresentation: RuleScopePresentation) {
         }
         RuleScopePresentation.UnknownApp -> {
             Text(
-                text = "App 专属规则",
+                text = strings.appScopedRule,
                 style = MaterialTheme.typography.bodySmall,
                 color = SecondaryText,
             )
         }
-    }
-}
-
-private fun RuleScope.scopeLabel(): String {
-    return when (this) {
-        RuleScope.Global -> "全局规则"
-        RuleScope.CurrentApp -> "仅当前 App"
     }
 }

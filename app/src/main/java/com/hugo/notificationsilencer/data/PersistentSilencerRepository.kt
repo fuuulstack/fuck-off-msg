@@ -66,6 +66,11 @@ class PersistentSilencerRepository(
         SilencerStore.saveSettings(context, settings)
     }
 
+    override fun setAppLanguage(language: AppLanguage) {
+        settings = settings.copy(appLanguage = language)
+        SilencerStore.saveSettings(context, settings)
+    }
+
     override fun addKeywords(
         keywords: List<String>,
         allow: Boolean,

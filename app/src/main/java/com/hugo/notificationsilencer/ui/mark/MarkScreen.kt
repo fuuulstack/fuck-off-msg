@@ -72,6 +72,7 @@ import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatusPill
 import com.hugo.notificationsilencer.ui.gestures.DragIntent
 import com.hugo.notificationsilencer.ui.gestures.dragIntent
+import com.hugo.notificationsilencer.ui.i18n.LocalSilencerStrings
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -81,6 +82,7 @@ fun MarkScreen(
     onAddWhitelist: (List<String>, RuleScope) -> Unit,
     onAddBlacklist: (List<String>, RuleScope) -> Unit,
 ) {
+    val strings = LocalSilencerStrings.current
     BackHandler(onBack = onBack)
 
     val cells = remember(record.id) { TextCell.tokenize("${record.title}${record.body}") }
@@ -98,10 +100,10 @@ fun MarkScreen(
         val keywords = selectedKeywords()
         AlertDialog(
             onDismissRequest = { pendingAllow = null },
-            title = { Text(if (allow) "添加白名单" else "添加黑名单") },
+            title = { Text(if (allow) strings.addWhitelist else strings.addBlacklist) },
             text = {
                 Text(
-                    text = if (keywords.isEmpty()) "还没有选择文字" else keywords.joinToString("、"),
+                    text = if (keywords.isEmpty()) strings.noTextSelected else keywords.joinToString("、"),
                     color = SecondaryText,
                 )
             },
@@ -116,7 +118,7 @@ fun MarkScreen(
                     },
                     enabled = keywords.isNotEmpty(),
                 ) {
-                    Text(if (allow) "全局白名单" else "全局黑名单")
+                    Text(if (allow) strings.globalWhitelist else strings.globalBlacklist)
                 }
             },
             dismissButton = {
@@ -130,7 +132,7 @@ fun MarkScreen(
                     },
                     enabled = keywords.isNotEmpty(),
                 ) {
-                    Text(if (allow) "仅当前 App 白名单" else "仅当前 App 黑名单")
+                    Text(if (allow) strings.currentAppWhitelist else strings.currentAppBlacklist)
                 }
             },
         )
@@ -156,13 +158,13 @@ fun MarkScreen(
                 ) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "返回历史列表",
+                        contentDescription = strings.history,
                         tint = SecondaryText,
                     )
                 }
                 PageHeader(
-                    title = "涂抹选词",
-                    subtitle = "连续选择视为一个词，非连续选择视为多个词",
+                    title = strings.markTitle,
+                    subtitle = strings.markSubtitle,
                     icon = Icons.Filled.Edit,
                     modifier = Modifier.weight(1f),
                 )
@@ -275,8 +277,8 @@ fun MarkScreen(
             }
 
             GlassActionRow(modifier = Modifier.fillMaxWidth()) {
-                IconLabelButton(
-                    text = "添加白名单",
+                    IconLabelButton(
+                        text = strings.addWhitelist,
                     icon = Icons.Filled.CheckCircle,
                     onClick = { pendingAllow = true },
                     enabled = selected.isNotEmpty(),
@@ -284,8 +286,8 @@ fun MarkScreen(
                     containerColor = MistGreenContainer,
                     contentColor = MistGreen,
                 )
-                IconLabelButton(
-                    text = "添加黑名单",
+                    IconLabelButton(
+                        text = strings.addBlacklist,
                     icon = Icons.Filled.Block,
                     onClick = { pendingAllow = false },
                     enabled = selected.isNotEmpty(),
@@ -301,9 +303,9 @@ fun MarkScreen(
                         .background(Color.White.copy(alpha = 0.92f))
                         .size(48.dp),
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = "清除勾选",
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = strings.clearSelection,
                         tint = if (selected.isNotEmpty()) MistRed else MutedText,
                     )
                 }
@@ -346,6 +348,7 @@ private fun TokenScrollIndicator(
 
 @Composable
 private fun SourceNotificationCard(record: NotificationRecord) {
+    val strings = LocalSilencerStrings.current
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -363,7 +366,7 @@ private fun SourceNotificationCard(record: NotificationRecord) {
             Text(text = record.title, style = MaterialTheme.typography.titleSmall, color = PrimaryText)
             Text(text = record.body, style = MaterialTheme.typography.bodyMedium, color = SecondaryText)
             StatusPill(
-                text = "正在标记关键词",
+                text = strings.markingKeywords,
                 icon = Icons.Filled.Edit,
                 containerColor = Color.White.copy(alpha = 0.88f),
                 contentColor = SecondaryText,

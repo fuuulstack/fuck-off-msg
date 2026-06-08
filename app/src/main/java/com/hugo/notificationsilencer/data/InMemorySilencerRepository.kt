@@ -36,6 +36,10 @@ class InMemorySilencerRepository private constructor(
         settings = settings.copy(enhancedMarketingRulesEnabled = enabled)
     }
 
+    override fun setAppLanguage(language: AppLanguage) {
+        settings = settings.copy(appLanguage = language)
+    }
+
     override fun addKeywords(
         keywords: List<String>,
         allow: Boolean,

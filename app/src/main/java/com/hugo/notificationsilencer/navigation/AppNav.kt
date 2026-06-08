@@ -21,22 +21,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.hugo.notificationsilencer.data.APP_WIDE_BLOCK_KEYWORD
+import com.hugo.notificationsilencer.data.RuleScope
 import com.hugo.notificationsilencer.data.SilencerRepository
+import com.hugo.notificationsilencer.data.isAppWideBlockRule
 import com.hugo.notificationsilencer.theme.AppBackground
 import com.hugo.notificationsilencer.theme.GlassWhite
 import com.hugo.notificationsilencer.theme.PrimaryText
 import com.hugo.notificationsilencer.theme.SecondaryText
 import com.hugo.notificationsilencer.ui.apps.AppsScreen
 import com.hugo.notificationsilencer.ui.history.HistoryScreen
+import com.hugo.notificationsilencer.ui.i18n.LocalSilencerStrings
 import com.hugo.notificationsilencer.ui.mark.MarkScreen
 import com.hugo.notificationsilencer.ui.rules.RulesScreen
 import com.hugo.notificationsilencer.ui.settings.SettingsScreen
 
 enum class AppDestination(val route: String, val label: String, val icon: ImageVector) {
-    History("history", "历史", Icons.Filled.History),
-    Apps("apps", "应用", Icons.Filled.Apps),
-    Rules("rules", "规则", Icons.AutoMirrored.Filled.Rule),
-    Settings("settings", "设置", Icons.Filled.Settings),
+    History("history", "History", Icons.Filled.History),
+    Apps("apps", "Apps", Icons.Filled.Apps),
+    Rules("rules", "Rules", Icons.AutoMirrored.Filled.Rule),
+    Settings("settings", "Settings", Icons.Filled.Settings),
 }
 
 @Composable
@@ -44,8 +48,11 @@ fun AppNav(
     repository: SilencerRepository,
     notificationAccessGranted: Boolean,
     notificationListenerConnected: Boolean,
+    ignoringBatteryOptimizations: Boolean,
     onOpenNotificationAccessSettings: () -> Unit,
+    onOpenBatteryOptimizationSettings: () -> Unit,
 ) {
+    val strings = LocalSilencerStrings.current
     var destination by rememberSaveable { mutableStateOf(AppDestination.History) }
     var markingRecordId by rememberSaveable { mutableStateOf<Long?>(null) }
 
@@ -88,11 +95,11 @@ fun AppNav(
                     NavigationBarItem(
                         selected = destination == item,
                         onClick = { destination = item },
-                        label = { Text(item.label) },
+                        label = { Text(item.localizedLabel(strings)) },
                         icon = {
                             Icon(
                                 imageVector = item.icon,
-                                contentDescription = item.label,
+                                contentDescription = item.localizedLabel(strings),
                             )
                         },
                         colors = NavigationBarItemDefaults.colors(
@@ -121,23 +128,65 @@ fun AppNav(
             AppDestination.Apps -> AppsScreen(
                 summaries = repository.appSummaries(),
                 records = repository.history(),
+                rules = repository.rules(),
                 onMark = { markingRecordId = it.id },
                 onDelete = { repository.deleteHistoryRecord(it.id) },
+                onToggleAppBlock = { summary ->
+                    val existingRuleIds = repository.rules()
+                        .filter { it.isAppWideBlockRule() && it.packageName == summary.packageName }
+                        .map { it.id }
+                        .toSet()
+                    if (existingRuleIds.isNotEmpty()) {
+                        repository.deleteRules(existingRuleIds)
+                    } else {
+                        repository.addKeywords(
+                            keywords = listOf(APP_WIDE_BLOCK_KEYWORD),
+                            allow = false,
+                            scope = RuleScope.CurrentApp,
+                            packageName = summary.packageName,
+                            appName = summary.appName,
+                        )
+                    }
+                },
                 modifier = Modifier.padding(innerPadding),
             )
             AppDestination.Rules -> RulesScreen(
                 rules = repository.rules(),
+                appSummaries = repository.appSummaries(),
+                appLanguage = repository.settings().appLanguage,
                 enhancedMarketingRulesEnabled = repository.settings().enhancedMarketingRulesEnabled,
                 onEnhancedMarketingRulesEnabledChange = repository::setEnhancedMarketingRulesEnabled,
+                onAddRule = { keyword, allow, scope, packageName, appName ->
+                    repository.addKeywords(
+                        keywords = listOf(keyword),
+                        allow = allow,
+                        scope = scope,
+                        packageName = packageName,
+                        appName = appName,
+                    )
+                },
                 onDeleteRules = repository::deleteRules,
                 modifier = Modifier.padding(innerPadding),
             )
             AppDestination.Settings -> SettingsScreen(
                 notificationAccessGranted = notificationAccessGranted,
                 notificationListenerConnected = notificationListenerConnected,
+                ignoringBatteryOptimizations = ignoringBatteryOptimizations,
+                appLanguage = repository.settings().appLanguage,
                 onOpenNotificationAccessSettings = onOpenNotificationAccessSettings,
+                onOpenBatteryOptimizationSettings = onOpenBatteryOptimizationSettings,
+                onAppLanguageChange = repository::setAppLanguage,
                 modifier = Modifier.padding(innerPadding),
             )
         }
+    }
+}
+
+private fun AppDestination.localizedLabel(strings: com.hugo.notificationsilencer.ui.i18n.SilencerStrings): String {
+    return when (this) {
+        AppDestination.History -> strings.history
+        AppDestination.Apps -> strings.apps
+        AppDestination.Rules -> strings.rules
+        AppDestination.Settings -> strings.settings
     }
 }

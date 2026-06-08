@@ -77,6 +77,7 @@ import com.hugo.notificationsilencer.ui.components.StatItem
 import com.hugo.notificationsilencer.ui.components.rememberAppLabel
 import com.hugo.notificationsilencer.ui.gestures.DragIntent
 import com.hugo.notificationsilencer.ui.gestures.dragIntent
+import com.hugo.notificationsilencer.ui.i18n.LocalSilencerStrings
 import com.hugo.notificationsilencer.ui.selection.SelectionActionRow
 import com.hugo.notificationsilencer.ui.selection.selectAllIds
 import kotlinx.coroutines.launch
@@ -97,6 +98,7 @@ fun HistoryScreen(
     onOpenNotificationAccessSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalSilencerStrings.current
     var query by remember { mutableStateOf("") }
     var decisionFilter by remember { mutableStateOf(HistoryDecisionFilter.All) }
     var activeActionRecordId by remember { mutableStateOf<Long?>(null) }
@@ -136,8 +138,8 @@ fun HistoryScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     PageHeader(
-                        title = "历史",
-                        subtitle = "默认展示今天的推送，历史仅保留 7 天",
+                        title = strings.history,
+                        subtitle = strings.historySubtitle,
                         icon = Icons.Filled.History,
                         modifier = Modifier.weight(1f),
                     )
@@ -154,7 +156,7 @@ fun HistoryScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Delete,
-                            contentDescription = "清空历史",
+                            contentDescription = strings.clearHistory,
                             tint = if (records.isNotEmpty()) MistRed else MistRed.copy(alpha = 0.35f),
                         )
                     }
@@ -196,7 +198,7 @@ fun HistoryScreen(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     StatItem(
-                        label = "通知",
+                        label = strings.notifications,
                         value = queryMatchedRecords.size.toString(),
                         icon = Icons.Filled.Notifications,
                         modifier = Modifier.weight(1f),
@@ -208,7 +210,7 @@ fun HistoryScreen(
                         },
                     )
                     StatItem(
-                        label = "拦截",
+                        label = strings.blocked,
                         value = blockedCount.toString(),
                         icon = Icons.Filled.Block,
                         modifier = Modifier.weight(1f),
@@ -220,7 +222,7 @@ fun HistoryScreen(
                         },
                     )
                     StatItem(
-                        label = "放行",
+                        label = strings.allowed,
                         value = allowedCount.toString(),
                         icon = Icons.Filled.CheckCircle,
                         modifier = Modifier.weight(1f),
@@ -293,15 +295,16 @@ private fun NotificationAccessCard(
     notificationListenerConnected: Boolean,
     onOpenSettings: () -> Unit,
 ) {
+    val strings = LocalSilencerStrings.current
     val title = when {
-        !notificationAccessGranted -> "通知监听未授权"
-        !notificationListenerConnected -> "通知监听未连接"
-        else -> "通知监听正常"
+        !notificationAccessGranted -> strings.notificationAccessMissingTitle
+        !notificationListenerConnected -> strings.notificationAccessDisconnectedTitle
+        else -> strings.notificationAccessOkTitle
     }
     val body = when {
-        !notificationAccessGranted -> "开启后才能记录和拦截新通知。"
-        !notificationListenerConnected -> "系统授权已开启，但监听服务没有绑定。进入设置页把权限关开一次可恢复。"
-        else -> "可以记录和拦截新通知。"
+        !notificationAccessGranted -> strings.notificationAccessMissingBody
+        !notificationListenerConnected -> strings.notificationAccessDisconnectedBody
+        else -> strings.notificationAccessOkBody
     }
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -331,7 +334,7 @@ private fun NotificationAccessCard(
                 )
             }
             Button(onClick = onOpenSettings) {
-                Text(if (notificationAccessGranted) "重新授权" else "去授权")
+                Text(if (notificationAccessGranted) strings.reauthorize else strings.authorize)
             }
         }
     }
@@ -339,19 +342,20 @@ private fun NotificationAccessCard(
 
 @Composable
 private fun EmptyHistoryCard() {
+    val strings = LocalSilencerStrings.current
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                text = "还没有通知记录",
+                text = strings.emptyHistoryTitle,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = PrimaryText,
             )
             Text(
-                text = "授权通知监听后，这里会显示所有 App 的通知历史。",
+                text = strings.emptyHistoryBody,
                 style = MaterialTheme.typography.bodyMedium,
                 color = SecondaryText,
             )
@@ -373,6 +377,7 @@ fun SwipeRevealHistoryCard(
     onMark: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val strings = LocalSilencerStrings.current
     val density = LocalDensity.current
     val deleteThresholdPx = with(density) { 80.dp.toPx() }
     val deleteExitPx = with(density) { 420.dp.toPx() }
@@ -497,6 +502,7 @@ private fun BoxScope.HistoryActionOverlay(
     onMark: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val strings = LocalSilencerStrings.current
     Box(
         modifier = Modifier
             .matchParentSize()
@@ -510,14 +516,14 @@ private fun BoxScope.HistoryActionOverlay(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconLabelButton(
-                text = "标记",
+                text = strings.mark,
                 icon = Icons.Filled.Edit,
                 onClick = onMark,
                 containerColor = Color.White,
                 contentColor = PrimaryText,
             )
             IconLabelButton(
-                text = "删除",
+                text = strings.delete,
                 icon = Icons.Filled.Delete,
                 onClick = onDelete,
                 containerColor = MistRed,
@@ -625,4 +631,3 @@ private fun NotificationRecord.isToday(): Boolean {
     val recordDate = Instant.ofEpochMilli(millis).atZone(zoneId).toLocalDate()
     return recordDate == LocalDate.now(zoneId)
 }
-

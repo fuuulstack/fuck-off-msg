@@ -1,7 +1,10 @@
 package com.hugo.notificationsilencer.rules
 
+import com.hugo.notificationsilencer.data.AppLanguage
+import java.util.Locale
+
 object DefaultKeywords {
-    val Conservative: Set<String> = linkedSetOf(
+    val ChineseConservative: Set<String> = linkedSetOf(
         "优惠券",
         "领券",
         "红包",
@@ -25,7 +28,7 @@ object DefaultKeywords {
         "到手价",
     )
 
-    val Enhanced: Set<String> = linkedSetOf(
+    val ChineseEnhanced: Set<String> = linkedSetOf(
         "活动",
         "上新",
         "推荐",
@@ -46,4 +49,86 @@ object DefaultKeywords {
         "直播中",
         "任务奖励",
     )
+
+    val EnglishConservative: Set<String> = linkedSetOf(
+        "sale",
+        "discount",
+        "coupon",
+        "promo code",
+        "voucher",
+        "free shipping",
+        "limited time",
+        "limited-time offer",
+        "flash sale",
+        "clearance",
+        "deal",
+        "special offer",
+        "exclusive offer",
+        "save now",
+        "save up to",
+        "cashback",
+        "buy one get one",
+        "bogo",
+        "doorbuster",
+        "price drop",
+        "lowest price",
+        "today only",
+        "ends tonight",
+    )
+
+    val EnglishEnhanced: Set<String> = linkedSetOf(
+        "new arrivals",
+        "back in stock",
+        "low stock",
+        "almost gone",
+        "selling fast",
+        "trending now",
+        "recommended for you",
+        "picked for you",
+        "wishlist",
+        "cart",
+        "abandoned cart",
+        "complete your purchase",
+        "checkout",
+        "members only",
+        "vip",
+        "early access",
+        "unlock",
+        "reward",
+        "points",
+        "bonus",
+        "giveaway",
+        "last chance",
+        "don't miss",
+        "shop now",
+        "subscribe",
+    )
+
+    val Conservative: Set<String> = ChineseConservative
+    val Enhanced: Set<String> = ChineseEnhanced
+
+    fun conservativeFor(language: AppLanguage): Set<String> {
+        return when (language.effective()) {
+            AppLanguage.English -> EnglishConservative
+            AppLanguage.Chinese -> ChineseConservative
+            AppLanguage.System -> ChineseConservative
+        }
+    }
+
+    fun enhancedFor(language: AppLanguage): Set<String> {
+        return when (language.effective()) {
+            AppLanguage.English -> EnglishEnhanced
+            AppLanguage.Chinese -> ChineseEnhanced
+            AppLanguage.System -> ChineseEnhanced
+        }
+    }
+}
+
+fun AppLanguage.effective(): AppLanguage {
+    if (this != AppLanguage.System) return this
+    return if (Locale.getDefault().language.equals("zh", ignoreCase = true)) {
+        AppLanguage.Chinese
+    } else {
+        AppLanguage.English
+    }
 }

@@ -12,6 +12,15 @@ enum class RuleScope {
     CurrentApp,
 }
 
+enum class AppLanguage {
+    System,
+    English,
+    Chinese,
+}
+
+const val APP_WIDE_BLOCK_KEYWORD = "__app_wide_block__"
+const val APP_WIDE_BLOCK_LABEL = "全部通知"
+
 data class NotificationRecord(
     val id: Long,
     val notificationKey: String? = null,
@@ -41,8 +50,13 @@ data class RuleItem(
     val appName: String? = null,
 )
 
+fun RuleItem.isAppWideBlockRule(): Boolean {
+    return !allow && scope == RuleScope.CurrentApp && keyword == APP_WIDE_BLOCK_KEYWORD
+}
+
 data class SilencerSettings(
     val enhancedMarketingRulesEnabled: Boolean = false,
+    val appLanguage: AppLanguage = AppLanguage.System,
 )
 
 interface SilencerRepository {
@@ -51,6 +65,7 @@ interface SilencerRepository {
     fun rules(): List<RuleItem>
     fun settings(): SilencerSettings
     fun setEnhancedMarketingRulesEnabled(enabled: Boolean)
+    fun setAppLanguage(language: AppLanguage)
     fun addKeywords(
         keywords: List<String>,
         allow: Boolean,

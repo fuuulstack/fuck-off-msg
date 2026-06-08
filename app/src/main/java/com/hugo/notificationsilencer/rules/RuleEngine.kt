@@ -10,6 +10,7 @@ object RuleEngine {
         conservativeKeywords: Set<String>,
         enhancedKeywords: Set<String>,
         enhancedEnabled: Boolean,
+        appWideBlacklistMatchedKeyword: String? = null,
     ): RuleResult {
         if (systemWhitelist.contains(packageName)) {
             return RuleResult(
@@ -24,6 +25,14 @@ object RuleEngine {
                 decision = Decision.WHITELIST_ALLOWED,
                 matchedKeyword = keyword,
                 source = RuleSource.USER_WHITELIST,
+            )
+        }
+
+        appWideBlacklistMatchedKeyword?.let { keyword ->
+            return RuleResult(
+                decision = Decision.BLOCKED,
+                matchedKeyword = keyword,
+                source = RuleSource.USER_BLACKLIST,
             )
         }
 

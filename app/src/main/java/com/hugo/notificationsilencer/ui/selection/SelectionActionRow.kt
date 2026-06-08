@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.hugo.notificationsilencer.theme.MistRed
 import com.hugo.notificationsilencer.theme.PrimaryText
 import com.hugo.notificationsilencer.theme.SecondaryText
+import com.hugo.notificationsilencer.ui.i18n.LocalSilencerStrings
 
 @Composable
 fun SelectionActionRow(
@@ -34,6 +35,7 @@ fun SelectionActionRow(
     onDeleteSelected: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalSilencerStrings.current
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -53,14 +55,14 @@ fun SelectionActionRow(
             ),
         )
         Text(
-            text = "已选 $selectedCount",
+            text = "${strings.selected} $selectedCount",
             style = MaterialTheme.typography.bodyMedium,
             color = PrimaryText,
         )
         IconButton(onClick = onDeleteSelected, modifier = Modifier.size(40.dp)) {
             Icon(
                 imageVector = Icons.Filled.Delete,
-                contentDescription = "删除所选",
+                contentDescription = strings.deleteSelected,
                 tint = MistRed,
             )
         }

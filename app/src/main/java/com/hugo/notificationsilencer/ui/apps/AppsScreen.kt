@@ -3,6 +3,7 @@ package com.hugo.notificationsilencer.ui.apps
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hugo.notificationsilencer.data.AppSummary
 import com.hugo.notificationsilencer.data.NotificationRecord
+import com.hugo.notificationsilencer.data.RuleItem
+import com.hugo.notificationsilencer.data.isAppWideBlockRule
 import com.hugo.notificationsilencer.theme.MistBlue
 import com.hugo.notificationsilencer.theme.MistBlueContainer
 import com.hugo.notificationsilencer.theme.MistRed
@@ -62,6 +65,7 @@ import com.hugo.notificationsilencer.ui.components.PageHeader
 import com.hugo.notificationsilencer.ui.components.StatusPill
 import com.hugo.notificationsilencer.ui.history.SwipeRevealHistoryCard
 import com.hugo.notificationsilencer.ui.history.dismissHistoryActionsOnBlankTap
+import com.hugo.notificationsilencer.ui.i18n.LocalSilencerStrings
 import com.hugo.notificationsilencer.ui.selection.SelectionActionRow
 import com.hugo.notificationsilencer.ui.selection.selectAllIds
 import kotlinx.coroutines.launch
@@ -70,10 +74,13 @@ import kotlinx.coroutines.launch
 fun AppsScreen(
     summaries: List<AppSummary>,
     records: List<NotificationRecord>,
+    rules: List<RuleItem>,
     onMark: (NotificationRecord) -> Unit,
     onDelete: (NotificationRecord) -> Unit,
+    onToggleAppBlock: (AppSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalSilencerStrings.current
     var selectedPackage by remember { mutableStateOf<String?>(null) }
     val selectedSummary = summaries.firstOrNull { it.packageName == selectedPackage }
 
@@ -95,7 +102,9 @@ fun AppsScreen(
 
     AppsListScreen(
         summaries = summaries,
+        rules = rules,
         onOpenApp = { selectedPackage = it.packageName },
+        onToggleAppBlock = onToggleAppBlock,
         modifier = modifier,
     )
 }
@@ -103,9 +112,12 @@ fun AppsScreen(
 @Composable
 private fun AppsListScreen(
     summaries: List<AppSummary>,
+    rules: List<RuleItem>,
     onOpenApp: (AppSummary) -> Unit,
+    onToggleAppBlock: (AppSummary) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalSilencerStrings.current
     var query by remember { mutableStateOf("") }
     val filteredSummaries = remember(summaries, query) {
         summaries.filter { it.matchesQuery(query) }
@@ -115,6 +127,12 @@ private fun AppsListScreen(
             .toSortedMap(compareBy { if (it == "#") "ZZZ" else it })
     }
     val listState = rememberLazyListState()
+    val blockedPackages = remember(rules) {
+        rules
+            .filter { it.isAppWideBlockRule() }
+            .mapNotNull { it.packageName }
+            .toSet()
+    }
     val indexPositions = remember(groupedSummaries) {
         val positions = mutableMapOf<String, Int>()
         var index = 2
@@ -136,8 +154,8 @@ private fun AppsListScreen(
             ) {
                 item {
                     PageHeader(
-                        title = "应用",
-                        subtitle = "按 App 汇总通知和拦截情况",
+                        title = strings.apps,
+                        subtitle = strings.appsSubtitle,
                         icon = Icons.Filled.Apps,
                     )
                 }
@@ -179,7 +197,9 @@ private fun AppsListScreen(
                         items(apps, key = { it.packageName }) { summary ->
                             AppSummaryCard(
                                 summary = summary,
+                                appBlocked = blockedPackages.contains(summary.packageName),
                                 onClick = { onOpenApp(summary) },
+                                onToggleAppBlock = { onToggleAppBlock(summary) },
                             )
                         }
                     }
@@ -199,7 +219,13 @@ private fun AppsListScreen(
 }
 
 @Composable
-private fun AppSummaryCard(summary: AppSummary, onClick: () -> Unit) {
+private fun AppSummaryCard(
+    summary: AppSummary,
+    appBlocked: Boolean,
+    onClick: () -> Unit,
+    onToggleAppBlock: () -> Unit,
+) {
+    val strings = LocalSilencerStrings.current
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
@@ -210,7 +236,11 @@ private fun AppSummaryCard(summary: AppSummary, onClick: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            AppAvatar(appName = summary.appName, packageName = summary.packageName)
+            BlockableAppAvatar(
+                summary = summary,
+                blocked = appBlocked,
+                onClick = onToggleAppBlock,
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -225,13 +255,13 @@ private fun AppSummaryCard(summary: AppSummary, onClick: () -> Unit) {
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     StatusPill(
-                        text = "通知 ${summary.totalCount}",
+                        text = "${strings.notifications} ${summary.totalCount}",
                         icon = Icons.Filled.Notifications,
                         containerColor = MistBlueContainer,
                         contentColor = MistBlue,
                     )
                     StatusPill(
-                        text = "拦截 ${summary.blockedCount}",
+                        text = "${strings.blocked} ${summary.blockedCount}",
                         icon = Icons.Filled.Block,
                         containerColor = MistRedContainer,
                         contentColor = MistRed,
@@ -239,7 +269,7 @@ private fun AppSummaryCard(summary: AppSummary, onClick: () -> Unit) {
                 }
                 summary.recentKeyword?.let {
                     StatusPill(
-                        text = "最近命中：$it",
+                        text = "${strings.recentMatch}$it",
                         icon = Icons.Filled.Sell,
                         containerColor = MistRedContainer,
                         contentColor = MistRed,
@@ -252,6 +282,41 @@ private fun AppSummaryCard(summary: AppSummary, onClick: () -> Unit) {
                 contentDescription = null,
                 tint = SecondaryText,
             )
+        }
+    }
+}
+
+@Composable
+private fun BlockableAppAvatar(
+    summary: AppSummary,
+    blocked: Boolean,
+    onClick: () -> Unit,
+) {
+    val strings = LocalSilencerStrings.current
+    Box(
+        modifier = Modifier
+            .size(46.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        AppAvatar(appName = summary.appName, packageName = summary.packageName)
+        if (blocked) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Color.White.copy(alpha = 0.68f))
+                    .border(1.dp, Color.White.copy(alpha = 0.82f), RoundedCornerShape(999.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Block,
+                    contentDescription = strings.appBlockedAll,
+                    tint = MistRed,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 }
@@ -296,9 +361,10 @@ private fun AlphabetIndex(
 
 @Composable
 private fun EmptyAppsCard(query: String) {
+    val strings = LocalSilencerStrings.current
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Text(
-            text = if (query.isBlank()) "暂无应用通知记录" else "没有匹配的应用",
+            text = if (query.isBlank()) strings.noAppRecords else strings.noMatchedApps,
             modifier = Modifier.padding(20.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = SecondaryText,
@@ -316,6 +382,7 @@ private fun AppNotificationsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val strings = LocalSilencerStrings.current
     val appName = summary?.appName ?: records.firstOrNull()?.appName ?: packageName
     var activeActionRecordId by remember { mutableStateOf<Long?>(null) }
     var selectedRecordIds by remember(packageName) { mutableStateOf(setOf<Long>()) }
@@ -357,13 +424,13 @@ private fun AppNotificationsScreen(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "返回应用列表",
+                            contentDescription = strings.backToApps,
                             tint = SecondaryText,
                         )
                     }
                     PageHeader(
                         title = appName,
-                        subtitle = "该 App 的推送列表",
+                        subtitle = strings.appNotificationsSubtitle,
                         icon = Icons.Filled.Notifications,
                         modifier = Modifier.weight(1f),
                     )
@@ -373,7 +440,7 @@ private fun AppNotificationsScreen(
                 item {
                     GlassCard(modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            text = "这个应用暂无推送记录",
+                            text = strings.appNoRecords,
                             modifier = Modifier.padding(20.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             color = SecondaryText,
