@@ -15,6 +15,16 @@ The project currently includes:
 - Background keep-alive helpers for boot, unlock, app update, and battery optimization settings.
 - A separate `:push-tester` module for sending real local test notifications.
 
+## Screenshots
+
+| History | Apps |
+| --- | --- |
+| ![History screen](docs/screenshots/history-screen.jpg) | ![Apps screen](docs/screenshots/apps-screen.jpg) |
+
+| Rules | Settings |
+| --- | --- |
+| ![Rules screen](docs/screenshots/rules-screen.jpg) | ![Settings screen](docs/screenshots/settings-screen.jpg) |
+
 ## Language
 
 The app supports:
