@@ -1,0 +1,376 @@
+package com.hugo.notificationsilencer.ui.mark
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.hugo.notificationsilencer.data.NotificationRecord
+import com.hugo.notificationsilencer.data.RuleScope
+import com.hugo.notificationsilencer.theme.AddedToken
+import com.hugo.notificationsilencer.theme.MistGreen
+import com.hugo.notificationsilencer.theme.MistGreenContainer
+import com.hugo.notificationsilencer.theme.MistRed
+import com.hugo.notificationsilencer.theme.MistRedContainer
+import com.hugo.notificationsilencer.theme.MutedText
+import com.hugo.notificationsilencer.theme.PrimaryText
+import com.hugo.notificationsilencer.theme.SecondaryText
+import com.hugo.notificationsilencer.theme.SelectedToken
+import com.hugo.notificationsilencer.ui.components.GlassActionRow
+import com.hugo.notificationsilencer.ui.components.GlassBackground
+import com.hugo.notificationsilencer.ui.components.GlassCard
+import com.hugo.notificationsilencer.ui.components.IconLabelButton
+import com.hugo.notificationsilencer.ui.components.PageHeader
+import com.hugo.notificationsilencer.ui.components.StatusPill
+import com.hugo.notificationsilencer.ui.gestures.DragIntent
+import com.hugo.notificationsilencer.ui.gestures.dragIntent
+import com.hugo.notificationsilencer.ui.i18n.LocalSilencerStrings
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun MarkScreen(
+    record: NotificationRecord,
+    onBack: () -> Unit,
+    onAddWhitelist: (List<String>, RuleScope) -> Unit,
+    onAddBlacklist: (List<String>, RuleScope) -> Unit,
+) {
+    val strings = LocalSilencerStrings.current
+    BackHandler(onBack = onBack)
+
+    val cells = remember(record.id) { TextCell.tokenize("${record.title}${record.body}") }
+    var selected by remember { mutableStateOf(setOf<Int>()) }
+    var added by remember { mutableStateOf(setOf<Int>()) }
+    var pendingAllow by remember { mutableStateOf<Boolean?>(null) }
+    val cellBounds = remember(record.id) { mutableStateMapOf<Int, Rect>() }
+    val tokenScrollState = rememberScrollState()
+
+    fun selectedKeywords(): List<String> {
+        return SmearSelection.groupSelectedKeywords(cells, selected)
+    }
+
+    pendingAllow?.let { allow ->
+        val keywords = selectedKeywords()
+        AlertDialog(
+            onDismissRequest = { pendingAllow = null },
+            title = { Text(if (allow) strings.addWhitelist else strings.addBlacklist) },
+            text = {
+                Text(
+                    text = if (keywords.isEmpty()) strings.noTextSelected else keywords.joinToString("、"),
+                    color = SecondaryText,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (allow) onAddWhitelist(keywords, RuleScope.Global)
+                        else onAddBlacklist(keywords, RuleScope.Global)
+                        added = added + selected
+                        selected = emptySet()
+                        pendingAllow = null
+                    },
+                    enabled = keywords.isNotEmpty(),
+                ) {
+                    Text(if (allow) strings.globalWhitelist else strings.globalBlacklist)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        if (allow) onAddWhitelist(keywords, RuleScope.CurrentApp)
+                        else onAddBlacklist(keywords, RuleScope.CurrentApp)
+                        added = added + selected
+                        selected = emptySet()
+                        pendingAllow = null
+                    },
+                    enabled = keywords.isNotEmpty(),
+                ) {
+                    Text(if (allow) strings.currentAppWhitelist else strings.currentAppBlacklist)
+                }
+            },
+        )
+    }
+
+    GlassBackground {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = onBack,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.92f))
+                        .size(48.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = strings.history,
+                        tint = SecondaryText,
+                    )
+                }
+                PageHeader(
+                    title = strings.markTitle,
+                    subtitle = strings.markSubtitle,
+                    icon = Icons.Filled.Edit,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            SourceNotificationCard(record = record)
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                FlowRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(tokenScrollState)
+                        .padding(end = 12.dp)
+                        .pointerInput(cells, added) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                val touched = mutableSetOf<Int>()
+                                val selectedBeforeGesture = selected
+                                var moved = false
+                                var totalX = 0f
+                                var totalY = 0f
+                                var intent = DragIntent.Undecided
+
+                                fun cellAt(position: Offset): Int? {
+                                    return cellBounds.entries.firstOrNull { (_, bounds) ->
+                                        bounds.contains(position)
+                                    }?.key
+                                }
+
+                                fun smearAt(position: Offset) {
+                                    val index = cellAt(position) ?: return
+                                    if (added.contains(index) || touched.contains(index)) return
+                                    touched += index
+                                    selected = if (selectedBeforeGesture.contains(index)) {
+                                        selected - index
+                                    } else {
+                                        selected + index
+                                    }
+                                }
+
+                                do {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull() ?: break
+                                    val delta = change.positionChange()
+                                    totalX += delta.x
+                                    totalY += delta.y
+                                    if (intent == DragIntent.Undecided) {
+                                        intent = dragIntent(totalX, totalY, viewConfiguration.touchSlop)
+                                    }
+                                    if (intent == DragIntent.HorizontalAction) {
+                                        if (!moved) smearAt(down.position)
+                                        if (delta.x != 0f || delta.y != 0f) {
+                                            moved = true
+                                        }
+                                        smearAt(change.position)
+                                        change.consume()
+                                    }
+                                } while (event.changes.any { !it.changedToUpIgnoreConsumed() })
+
+                                if (intent == DragIntent.Undecided) {
+                                    smearAt(down.position)
+                                }
+                            }
+                        },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    cells.forEach { cell ->
+                        val selectedNow = selected.contains(cell.index)
+                        val addedNow = added.contains(cell.index)
+                        Text(
+                            text = cell.text,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    when {
+                                        addedNow -> AddedToken
+                                        selectedNow -> SelectedToken
+                                        else -> Color.White.copy(alpha = 0.82f)
+                                    },
+                                )
+                                .onGloballyPositioned { coordinates ->
+                                    val parent = coordinates.parentLayoutCoordinates ?: return@onGloballyPositioned
+                                    val topLeft = parent.localPositionOf(coordinates, Offset.Zero)
+                                    cellBounds[cell.index] = Rect(
+                                        left = topLeft.x,
+                                        top = topLeft.y,
+                                        right = topLeft.x + coordinates.size.width,
+                                        bottom = topLeft.y + coordinates.size.height,
+                                    )
+                                }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (addedNow) MutedText else PrimaryText,
+                        )
+                    }
+                }
+                TokenScrollIndicator(
+                    maxScroll = tokenScrollState.maxValue,
+                    scrollValue = tokenScrollState.value,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(4.dp),
+                )
+            }
+
+            GlassActionRow(modifier = Modifier.fillMaxWidth()) {
+                    IconLabelButton(
+                        text = strings.addWhitelist,
+                    icon = Icons.Filled.CheckCircle,
+                    onClick = { pendingAllow = true },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    containerColor = MistGreenContainer,
+                    contentColor = MistGreen,
+                )
+                    IconLabelButton(
+                        text = strings.addBlacklist,
+                    icon = Icons.Filled.Block,
+                    onClick = { pendingAllow = false },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.weight(1f),
+                    containerColor = MistRedContainer,
+                    contentColor = MistRed,
+                )
+                IconButton(
+                    onClick = { selected = emptySet() },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.White.copy(alpha = 0.92f))
+                        .size(48.dp),
+                ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = strings.clearSelection,
+                        tint = if (selected.isNotEmpty()) MistRed else MutedText,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TokenScrollIndicator(
+    maxScroll: Int,
+    scrollValue: Int,
+    modifier: Modifier = Modifier,
+) {
+    if (maxScroll <= 0) return
+
+    Canvas(modifier = modifier) {
+        val trackWidth = size.width
+        val trackHeight = size.height
+        if (trackHeight <= 0f) return@Canvas
+
+        val contentHeight = trackHeight + maxScroll
+        val thumbHeight = (trackHeight * trackHeight / contentHeight).coerceAtLeast(24.dp.toPx())
+        val thumbTop = (scrollValue / maxScroll.toFloat()) * (trackHeight - thumbHeight)
+        val radius = CornerRadius(trackWidth / 2f, trackWidth / 2f)
+
+        drawRoundRect(
+            color = SecondaryText.copy(alpha = 0.18f),
+            size = Size(trackWidth, trackHeight),
+            cornerRadius = radius,
+        )
+        drawRoundRect(
+            color = SecondaryText.copy(alpha = 0.58f),
+            topLeft = Offset(0f, thumbTop),
+            size = Size(trackWidth, thumbHeight),
+            cornerRadius = radius,
+        )
+    }
+}
+
+@Composable
+private fun SourceNotificationCard(record: NotificationRecord) {
+    val strings = LocalSilencerStrings.current
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(imageVector = Icons.Filled.Notifications, contentDescription = null, tint = SecondaryText)
+                Text(
+                    text = record.appName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = PrimaryText,
+                )
+            }
+            Text(text = record.title, style = MaterialTheme.typography.titleSmall, color = PrimaryText)
+            Text(text = record.body, style = MaterialTheme.typography.bodyMedium, color = SecondaryText)
+            StatusPill(
+                text = strings.markingKeywords,
+                icon = Icons.Filled.Edit,
+                containerColor = Color.White.copy(alpha = 0.88f),
+                contentColor = SecondaryText,
+            )
+        }
+    }
+}
